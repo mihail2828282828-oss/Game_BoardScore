@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Мягкий декоративный фон за диаграммой -->
+    <path
+        android:fillColor="#352454"
+        android:pathData="M54,25 A29,29 0,1 1,54,83 A29,29 0,1 1,54,25 Z" />
+
+    <!-- Левый столбец -->
+    <path
+        android:fillColor="#9B86EF"
+        android:pathData="M34,49 L41,49 Q43,49 43,51 L43,71 L32,71 L32,51 Q32,49 34,49 Z" />
+
+    <!-- Правый столбец -->
+    <path
+        android:fillColor="#79DBC6"
+        android:pathData="M67,55 L74,55 Q76,55 76,57 L76,71 L65,71 L65,57 Q65,55 67,55 Z" />
+
+    <!-- Центральный столбец — лидер -->
+    <path
+        android:fillColor="#D2BEFF"
+        android:pathData="M50,42 L58,42 Q60,42 60,44 L60,71 L48,71 L48,44 Q48,42 50,42 Z" />
+
+    <!-- Световая грань -->
+    <path
+        android:fillColor="#F1E8FF"
+        android:pathData="M50,42 L53,42 L53,71 L48,71 L48,44 Q48,42 50,42 Z" />
+
+    <!-- Корона -->
+    <path
+        android:fillColor="#FFD479"
+        android:pathData="M44,30 L49,34 L54,27 L59,34 L64,30 L61,39 L47,39 Z" />
+
+    <!-- Основание -->
+    <path
+        android:fillColor="#EEE6FF"
+        android:pathData="M32,72 L76,72 Q78,72 78,74 Q78,76 76,76 L32,76 Q30,76 30,74 Q30,72 32,72 Z" />
+
+</vector>
