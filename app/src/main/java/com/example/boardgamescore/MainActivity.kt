@@ -1,11 +1,19 @@
 package com.example.boardgamescore
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -23,233 +31,451 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-private val Background = Color(0xFF101019)
-private val Panel = Color(0xFF1B1B29)
-private val Accent = Color(0xFFB9A0FF)
-private val Muted = Color(0xFFA6A4BB)
-private val Mint = Color(0xFF88E0C2)
-
-private val PlayerColors = listOf(
-    Color(0xFFB9A0FF),
-    Color(0xFF88E0C2),
-    Color(0xFFFFBF87),
-    Color(0xFF8ECFFF),
-    Color(0xFFFF9EB5),
-    Color(0xFFE2D58C),
-    Color(0xFF9FAEFF),
-    Color(0xFFD7A3E5)
-)
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
 enum class WinRule { MAX, MIN }
+
+data class SavedGame(
+    val id: String,
+    val name: String,
+    val date: Long,
+    val players: List<String>,
+    val rounds: List<List<Int>>,
+    val rule: WinRule
+)
+
+private val AccentNames = listOf("Фиолетовый", "Синий", "Зелёный")
+private val DarkAccents = listOf(
+    Color(0xFFC2AAFF),
+    Color(0xFF9CCAFF),
+    Color(0xFF87DBB6)
+)
+private val LightAccents = listOf(
+    Color(0xFF7045B5),
+    Color(0xFF245FA6),
+    Color(0xFF176B4C)
+)
+
+private class AppStorage(context: Context) {
+    private val prefs = context.getSharedPreferences(
+        "board_game_score",
+        Context.MODE_PRIVATE
+    )
+
+    var theme: String
+        get() = prefs.getString("theme", "system") ?: "system"
+        set(value) {
+            prefs.edit().putString("theme", value).apply()
+        }
+
+    var accent: Int
+        get() = prefs.getInt("accent", 0).coerceIn(0, 2)
+        set(value) {
+            prefs.edit().putInt("accent", value).apply()
+        }
+
+    var animations: Boolean
+        get() = prefs.getBoolean("animations", true)
+        set(value) {
+            prefs.edit().putBoolean("animations", value).apply()
+        }
+
+    fun loadHistory(): List<SavedGame> {
+        return runCatching {
+            val array = JSONArray(prefs.getString("history", "[]"))
+
+            List(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                val players = item.getJSONArray("players")
+                val rounds = item.getJSONArray("rounds")
+
+                SavedGame(
+                    id = item.getString("id"),
+                    name = item.getString("name"),
+                    date = item.getLong("date"),
+                    players = List(players.length()) {
+                        players.getString(it)
+                    },
+                    rounds = List(rounds.length()) { rowIndex ->
+                        val row = rounds.getJSONArray(rowIndex)
+                        List(row.length()) { row.getInt(it) }
+                    },
+                    rule = WinRule.valueOf(item.getString("rule"))
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveHistory(games: List<SavedGame>) {
+        val array = JSONArray()
+
+        games.forEach { game ->
+            val playerArray = JSONArray()
+            game.players.forEach { playerArray.put(it) }
+
+            val roundArray = JSONArray()
+            game.rounds.forEach { row ->
+                val values = JSONArray()
+                row.forEach { values.put(it) }
+                roundArray.put(values)
+            }
+
+            array.put(
+                JSONObject().apply {
+                    put("id", game.id)
+                    put("name", game.name)
+                    put("date", game.date)
+                    put("players", playerArray)
+                    put("rounds", roundArray)
+                    put("rule", game.rule.name)
+                }
+            )
+        }
+
+        prefs.edit().putString("history", array.toString()).apply()
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val storage = AppStorage(this)
 
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Accent,
-                    onPrimary = Color(0xFF231344),
-                    secondary = Mint,
-                    background = Background,
-                    surface = Panel,
-                    onBackground = Color(0xFFF4F1FF),
-                    onSurface = Color(0xFFF4F1FF),
-                    onSurfaceVariant = Muted,
-                    outline = Color(0xFF494459),
-                    error = Color(0xFFFFB4AB)
-                )
-            ) {
-                BoardGameScoreApp()
-            }
+            ScoreApp(storage)
         }
     }
 }
 
 @Composable
-fun BoardGameScoreApp() {
-    var inGame by remember { mutableStateOf(false) }
-    var gameName by remember { mutableStateOf("") }
-    var rule by remember { mutableStateOf(WinRule.MAX) }
-    var players by remember { mutableStateOf(emptyList<String>()) }
+private fun ScoreApp(storage: AppStorage) {
+    var theme by remember { mutableStateOf(storage.theme) }
+    var accent by remember { mutableStateOf(storage.accent) }
+    var animations by remember { mutableStateOf(storage.animations) }
 
+    var history by remember { mutableStateOf(storage.loadHistory()) }
+    var tab by remember { mutableStateOf(0) }
+
+    var gameName by remember { mutableStateOf("") }
+    var players by remember { mutableStateOf(emptyList<String>()) }
+    var rule by remember { mutableStateOf(WinRule.MAX) }
     val rounds = remember {
         mutableStateListOf<SnapshotStateList<String>>()
     }
 
+    // Форма создания не сбрасывается при переключении вкладок.
+    var draftName by remember { mutableStateOf("") }
+    val draftPlayers = remember { mutableStateListOf("", "") }
+    var draftRule by remember { mutableStateOf(WinRule.MAX) }
+
+    var active by remember { mutableStateOf(false) }
     var finished by remember { mutableStateOf(false) }
+
     var confirmFinish by remember { mutableStateOf(false) }
-    var confirmExit by remember { mutableStateOf(false) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    var deleteId by remember { mutableStateOf<String?>(null) }
+    var selectedGame by remember { mutableStateOf<SavedGame?>(null) }
+
+    val systemDark = isSystemInDarkTheme()
+    val dark = when (theme) {
+        "dark" -> true
+        "light" -> false
+        else -> systemDark
+    }
+
+    val targetAccent = if (dark) DarkAccents[accent] else LightAccents[accent]
+    val primary by animateColorAsState(
+        targetValue = targetAccent,
+        animationSpec = tween(if (animations) 300 else 0),
+        label = "accent"
+    )
+
+    val colors = if (dark) {
+        darkColorScheme(
+            primary = primary,
+            onPrimary = Color(0xFF181222),
+            primaryContainer = primary.copy(alpha = 0.18f),
+            background = Color(0xFF101117),
+            surface = Color(0xFF1B1D26),
+            surfaceVariant = Color(0xFF262936),
+            onSurface = Color(0xFFF2F0F8),
+            onBackground = Color(0xFFF2F0F8)
+        )
+    } else {
+        lightColorScheme(
+            primary = primary,
+            onPrimary = Color.White,
+            primaryContainer = primary.copy(alpha = 0.12f),
+            background = Color(0xFFF5F5FA),
+            surface = Color.White,
+            surfaceVariant = Color(0xFFEBEDF5),
+            onSurface = Color(0xFF20212C),
+            onBackground = Color(0xFF20212C)
+        )
+    }
 
     fun resetGame() {
-        inGame = false
+        active = false
         finished = false
-        confirmFinish = false
-        confirmExit = false
-        rounds.clear()
         players = emptyList()
+        rounds.clear()
+        confirmDiscard = false
+        draftName = ""
+        draftPlayers.clear()
+        draftPlayers.addAll(listOf("", ""))
+        draftRule = WinRule.MAX
     }
 
-    BackHandler(enabled = inGame) {
-        confirmExit = true
-    }
-
-    Scaffold(containerColor = Background) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFF211A36), Background),
-                        endY = 1000f
-                    )
-                )
-                .imePadding()
-        ) {
-            if (!inGame) {
-                SetupScreen { name, selectedRule, names ->
-                    gameName = name
-                    rule = selectedRule
-                    players = names
-                    rounds.clear()
-                    rounds.add(newRound(names.size))
-                    finished = false
-                    inGame = true
-                }
-            } else {
-                GameScreen(
-                    gameName = gameName,
-                    rule = rule,
-                    players = players,
-                    rounds = rounds,
-                    finished = finished,
-                    onBack = { confirmExit = true },
-                    onAddRound = {
-                        rounds.add(newRound(players.size))
-                    },
-                    onFinish = { confirmFinish = true },
-                    onNewGame = { resetGame() }
-                )
-            }
+    BackHandler(enabled = active || tab != 0) {
+        if (tab != 0) {
+            tab = 0
+        } else {
+            confirmDiscard = true
         }
     }
 
-    if (confirmFinish) {
-        AlertDialog(
-            onDismissRequest = { confirmFinish = false },
-            title = { Text("Подвести итоги?") },
-            text = {
-                Text("После завершения изменить очки будет нельзя.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmFinish = false
+    MaterialTheme(colorScheme = colors) {
+        Scaffold(
+            containerColor = colors.background,
+            bottomBar = {
+                NavigationBar(
+                    containerColor = colors.surface,
+                    tonalElevation = 0.dp
+                ) {
+                    val titles = listOf("Игра", "История", "Настройки")
+                    val symbols = listOf("▶", "≡", "⚙")
+
+                    titles.forEachIndexed { index, title ->
+                        NavigationBarItem(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = {
+                                Text(
+                                    symbols[index],
+                                    fontSize = 23.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            label = { Text(title) }
+                        )
+                    }
+                }
+            }
+        ) { padding ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .imePadding()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                colors.primary.copy(alpha = 0.10f),
+                                colors.background
+                            )
+                        )
+                    )
+            ) {
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = {
+                        fadeIn(tween(if (animations) 220 else 0)) togetherWith
+                            fadeOut(tween(if (animations) 120 else 0))
+                    },
+                    label = "tabs"
+                ) { currentTab ->
+                    when (currentTab) {
+                        0 -> {
+                            if (!active) {
+                                SetupPage(
+                                    name = draftName,
+                                    onName = { draftName = it },
+                                    names = draftPlayers,
+                                    rule = draftRule,
+                                    onRule = { draftRule = it },
+                                    onStart = {
+                                        gameName = draftName.trim()
+                                        players = draftPlayers.map { it.trim() }
+                                        rule = draftRule
+
+                                        rounds.clear()
+                                        rounds.add(
+                                            mutableStateListOf<String>().apply {
+                                                repeat(players.size) { add("0") }
+                                            }
+                                        )
+
+                                        active = true
+                                        finished = false
+                                    }
+                                )
+                            } else {
+                                GamePage(
+                                    name = gameName,
+                                    players = players,
+                                    rule = rule,
+                                    rounds = rounds,
+                                    finished = finished,
+                                    animations = animations,
+                                    onAddRound = {
+                                        rounds.add(
+                                            mutableStateListOf<String>().apply {
+                                                repeat(players.size) { add("0") }
+                                            }
+                                        )
+                                    },
+                                    onFinish = { confirmFinish = true },
+                                    onReset = {
+                                        if (finished) resetGame()
+                                        else confirmDiscard = true
+                                    }
+                                )
+                            }
+                        }
+
+                        1 -> HistoryPage(
+                            games = history,
+                            onOpen = { selectedGame = it },
+                            onDelete = { deleteId = it.id }
+                        )
+
+                        2 -> SettingsPage(
+                            theme = theme,
+                            onTheme = {
+                                theme = it
+                                storage.theme = it
+                            },
+                            accent = accent,
+                            onAccent = {
+                                accent = it
+                                storage.accent = it
+                            },
+                            animations = animations,
+                            onAnimations = {
+                                animations = it
+                                storage.animations = it
+                            },
+                            historySize = history.size,
+                            onClear = { confirmClear = true }
+                        )
+                    }
+                }
+            }
+        }
+
+        if (confirmFinish) {
+            ConfirmDialog(
+                title = "Завершить партию?",
+                message = "Результат сохранится в истории. Изменить очки после завершения нельзя.",
+                action = "Завершить",
+                onDismiss = { confirmFinish = false },
+                onConfirm = {
+                    val valid = rounds.all { row ->
+                        row.all { parseScore(it) != null }
+                    }
+
+                    if (valid && !finished) {
+                        val saved = SavedGame(
+                            id = UUID.randomUUID().toString(),
+                            name = gameName,
+                            date = System.currentTimeMillis(),
+                            players = players.toList(),
+                            rounds = rounds.map { row ->
+                                row.map { parseScore(it)!! }
+                            },
+                            rule = rule
+                        )
+
+                        history = listOf(saved) + history
+                        storage.saveHistory(history)
                         finished = true
                     }
-                ) {
-                    Text("Завершить")
+
+                    confirmFinish = false
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmFinish = false }) {
-                    Text("Продолжить игру")
-                }
-            }
-        )
-    }
-
-    if (confirmExit) {
-        AlertDialog(
-            onDismissRequest = { confirmExit = false },
-            title = { Text("Выйти из партии?") },
-            text = {
-                Text("Текущий счёт будет удалён. История не сохраняется.")
-            },
-            confirmButton = {
-                TextButton(onClick = { resetGame() }) {
-                    Text("Выйти")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmExit = false }) {
-                    Text("Остаться")
-                }
-            }
-        )
-    }
-}
-
-private fun newRound(size: Int): SnapshotStateList<String> {
-    return mutableStateListOf<String>().apply {
-        repeat(size) { add("0") }
-    }
-}
-
-private fun parseScore(text: String): Int? {
-    return text.trim().toIntOrNull()?.takeIf {
-        it in -9999..9999
-    }
-}
-
-private fun totals(
-    rounds: List<List<String>>,
-    playerCount: Int
-): List<Long?> {
-    return List(playerCount) { column ->
-        val values = rounds.map { parseScore(it[column]) }
-
-        if (values.any { it == null }) {
-            null
-        } else {
-            values.sumOf { it!!.toLong() }
+            )
         }
-    }
-}
 
-private fun resultText(
-    rule: WinRule,
-    players: List<String>,
-    scores: List<Long?>
-): String {
-    if (scores.any { it == null } || scores.isEmpty()) {
-        return "Проверьте введённые очки"
-    }
+        if (confirmDiscard) {
+            ConfirmDialog(
+                title = "Закрыть текущую партию?",
+                message = if (finished) {
+                    "Результат уже сохранён в истории."
+                } else {
+                    "Незавершённая партия будет удалена без сохранения."
+                },
+                action = "Закрыть",
+                onDismiss = { confirmDiscard = false },
+                onConfirm = { resetGame() }
+            )
+        }
 
-    val values = scores.filterNotNull()
-    val best = if (rule == WinRule.MAX) {
-        values.maxOrNull()!!
-    } else {
-        values.minOrNull()!!
-    }
+        if (confirmClear) {
+            ConfirmDialog(
+                title = "Очистить историю?",
+                message = "Все завершённые партии будут удалены. Отменить это действие нельзя.",
+                action = "Удалить всё",
+                onDismiss = { confirmClear = false },
+                onConfirm = {
+                    history = emptyList()
+                    storage.saveHistory(history)
+                    confirmClear = false
+                }
+            )
+        }
 
-    val winners = players.filterIndexed { index, _ ->
-        values[index] == best
-    }
+        deleteId?.let { id ->
+            ConfirmDialog(
+                title = "Удалить партию?",
+                message = "Эта запись исчезнет из истории.",
+                action = "Удалить",
+                onDismiss = { deleteId = null },
+                onConfirm = {
+                    history = history.filterNot { it.id == id }
+                    storage.saveHistory(history)
+                    deleteId = null
+                }
+            )
+        }
 
-    return if (winners.size == 1) {
-        "Победитель — ${winners.first()}\nИтог: $best"
-    } else {
-        "Ничья — ${winners.joinToString(", ")}\nИтог: $best"
+        selectedGame?.let { game ->
+            HistoryDetails(
+                game = game,
+                onDismiss = { selectedGame = null }
+            )
+        }
     }
 }
 
 @Composable
-private fun SectionCard(
-    content: @Composable ColumnScope.() -> Unit
-) {
+private fun Page(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        content = content
+    )
+}
+
+@Composable
+private fun Panel(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Panel
+            containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content
         )
@@ -257,513 +483,414 @@ private fun SectionCard(
 }
 
 @Composable
-private fun PlayerAvatar(index: Int) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .background(
-                PlayerColors[index % PlayerColors.size].copy(alpha = 0.16f),
-                CircleShape
-            ),
-        contentAlignment = Alignment.Center
-    ) {
+private fun PageTitle(title: String, subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "${index + 1}",
-            color = PlayerColors[index % PlayerColors.size],
+            title,
+            fontSize = 30.sp,
+            lineHeight = 35.sp,
             fontWeight = FontWeight.Bold
         )
-    }
-}
-
-@Composable
-private fun SectionTitle(number: String, title: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
         Text(
-            text = number,
-            color = Accent,
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp
-        )
-
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
+            subtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
 @Composable
-fun SetupScreen(
-    onStart: (String, WinRule, List<String>) -> Unit
+private fun MainButton(
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var rule by remember { mutableStateOf(WinRule.MAX) }
-    val inputs = remember { mutableStateListOf("", "") }
-
-    val cleanName = name.trim()
-    val names = inputs.map { it.trim() }
-
-    val nameValid = cleanName.length in 1..30
-
-    val playerErrors = names.map { playerName ->
-        when {
-            playerName.isEmpty() -> "Введите имя"
-            playerName.length > 15 -> "Не более 15 символов"
-            names.count {
-                it.equals(playerName, ignoreCase = true)
-            } > 1 -> "Имя уже используется"
-            else -> null
-        }
-    }
-
-    val canStart =
-        nameValid &&
-        names.size in 2..8 &&
-        playerErrors.all { it == null }
-
-    Column(
+    Button(
+        onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+            .fillMaxWidth()
+            .heightIn(min = 56.dp),
+        shape = RoundedCornerShape(18.dp)
     ) {
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text = "BOARD GAME SCORE",
-            color = Accent,
-            fontSize = 12.sp,
-            letterSpacing = 3.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Text(
-            text = "Играйте.\nСчёт — на нас.",
-            fontSize = 34.sp,
-            lineHeight = 39.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Text(
-            text = "Соберите компанию и начните новую партию.",
-            color = Muted,
-            style = MaterialTheme.typography.bodyLarge
-        )
-
-        SectionCard {
-            SectionTitle("01", "Во что играем?")
-
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Название игры") },
-                placeholder = { Text("Например, Уно") },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                isError = name.isNotEmpty() && !nameValid,
-                supportingText = {
-                    Text(
-                        if (name.isNotEmpty() && !nameValid) {
-                            "Название должно содержать 1–30 символов"
-                        } else {
-                            "${cleanName.length}/30"
-                        }
-                    )
-                }
-            )
-        }
-
-        SectionCard {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SectionTitle("02", "Кто за столом?")
-                Text("${inputs.size}/8", color = Muted)
-            }
-
-            inputs.forEachIndexed { index, value ->
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        PlayerAvatar(index)
-
-                        OutlinedTextField(
-                            value = value,
-                            onValueChange = { inputs[index] = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Игрок ${index + 1}") },
-                            singleLine = true,
-                            shape = RoundedCornerShape(16.dp),
-                            isError =
-                                value.isNotEmpty() &&
-                                playerErrors[index] != null
-                        )
-
-                        if (inputs.size > 2) {
-                            TextButton(
-                                onClick = { inputs.removeAt(index) },
-                                modifier = Modifier.size(48.dp),
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text("×", fontSize = 24.sp)
-                            }
-                        }
-                    }
-
-                    if (value.isNotEmpty() && playerErrors[index] != null) {
-                        Text(
-                            text = playerErrors[index]!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(
-                                start = 50.dp,
-                                top = 4.dp
-                            )
-                        )
-                    }
-                }
-            }
-
-            OutlinedButton(
-                onClick = { inputs.add("") },
-                enabled = inputs.size < 8,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 50.dp),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("+  Добавить игрока")
-            }
-        }
-
-        SectionCard {
-            SectionTitle("03", "Как определить победителя?")
-
-            RuleOption(
-                title = "Больше очков",
-                subtitle = "Побеждает максимальная сумма",
-                selected = rule == WinRule.MAX,
-                onClick = { rule = WinRule.MAX }
-            )
-
-            RuleOption(
-                title = "Меньше очков",
-                subtitle = "Побеждает минимальная сумма",
-                selected = rule == WinRule.MIN,
-                onClick = { rule = WinRule.MIN }
-            )
-        }
-
-        Button(
-            onClick = { onStart(cleanName, rule, names) },
-            enabled = canStart,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 58.dp),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Text(
-                "Начать партию",
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Text(
-            text = "Без аккаунтов и интернета. Только ваша игра.",
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-            color = Muted,
-            style = MaterialTheme.typography.bodySmall
-        )
-
-        Spacer(Modifier.height(8.dp))
+        Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun RuleOption(
+private fun Choice(
     title: String,
-    subtitle: String,
     selected: Boolean,
     onClick: () -> Unit
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = if (selected) {
-            Accent.copy(alpha = 0.14f)
+            MaterialTheme.colorScheme.primaryContainer
         } else {
-            Background.copy(alpha = 0.5f)
-        }
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        },
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            RadioButton(
-                selected = selected,
-                onClick = null
-            )
-
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    title,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    subtitle,
-                    color = Muted,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
+            RadioButton(selected = selected, onClick = null)
+            Text(title, fontWeight = FontWeight.Medium)
         }
     }
 }
 
 @Composable
-fun GameScreen(
-    gameName: String,
+private fun SetupPage(
+    name: String,
+    onName: (String) -> Unit,
+    names: SnapshotStateList<String>,
     rule: WinRule,
-    players: List<String>,
-    rounds: SnapshotStateList<SnapshotStateList<String>>,
-    finished: Boolean,
-    onBack: () -> Unit,
-    onAddRound: () -> Unit,
-    onFinish: () -> Unit,
-    onNewGame: () -> Unit
+    onRule: (WinRule) -> Unit,
+    onStart: () -> Unit
 ) {
-    val scores = totals(rounds, players.size)
-    val allValid = rounds.isNotEmpty() &&
-        rounds.all { row -> row.all { parseScore(it) != null } }
+    val trimmed = names.map { it.trim() }
+    val validName = name.trim().length in 1..30
 
-    val best = if (allValid) {
-        if (rule == WinRule.MAX) {
-            scores.filterNotNull().maxOrNull()
-        } else {
-            scores.filterNotNull().minOrNull()
+    val errors = trimmed.map { player ->
+        when {
+            player.isEmpty() -> "Введите имя"
+            player.length > 15 -> "Максимум 15 символов"
+            trimmed.count { it.equals(player, true) } > 1 ->
+                "Имя уже используется"
+            else -> null
         }
-    } else {
-        null
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            TextButton(onClick = onBack) {
-                Text("‹  Выйти")
-            }
+    val valid = validName &&
+        names.size in 2..8 &&
+        errors.all { it == null }
 
-            Surface(
-                shape = RoundedCornerShape(50.dp),
-                color = if (finished) {
-                    Mint.copy(alpha = 0.15f)
-                } else {
-                    Accent.copy(alpha = 0.15f)
-                }
-            ) {
-                Text(
-                    text = if (finished) "ЗАВЕРШЕНА" else "ИДЁТ ИГРА",
-                    modifier = Modifier.padding(
-                        horizontal = 14.dp,
-                        vertical = 9.dp
-                    ),
-                    color = if (finished) Mint else Accent,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-            }
-        }
-
+    Page {
         Text(
-            text = gameName,
-            fontSize = 30.sp,
+            "BOARD GAME SCORE",
+            color = MaterialTheme.colorScheme.primary,
+            letterSpacing = 3.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
 
+        PageTitle(
+            "Время играть",
+            "Новая компания. Новая партия. Новый победитель."
+        )
+
+        Panel {
+            Text("Название игры", fontWeight = FontWeight.Bold)
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = onName,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Например, Уно") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                isError = name.isNotEmpty() && !validName,
+                supportingText = {
+                    Text(
+                        if (name.isNotEmpty() && !validName) {
+                            "Введите от 1 до 30 символов"
+                        } else {
+                            "${name.trim().length}/30"
+                        }
+                    )
+                }
+            )
+        }
+
+        Panel {
+            Text(
+                "Участники · ${names.size}/8",
+                fontWeight = FontWeight.Bold
+            )
+
+            names.forEachIndexed { index, value ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "${index + 1}",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = { names[index] = it },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Игрок ${index + 1}") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        isError = value.isNotEmpty() && errors[index] != null,
+                        supportingText = {
+                            if (value.isNotEmpty() && errors[index] != null) {
+                                Text(errors[index]!!)
+                            }
+                        }
+                    )
+
+                    if (names.size > 2) {
+                        TextButton(
+                            onClick = { names.removeAt(index) },
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Text("×", fontSize = 24.sp)
+                        }
+                    }
+                }
+            }
+
+            OutlinedButton(
+                onClick = { names.add("") },
+                enabled = names.size < 8,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("+ Добавить игрока")
+            }
+        }
+
+        Panel {
+            Text("Условие победы", fontWeight = FontWeight.Bold)
+
+            Choice(
+                "Больше очков — лучше",
+                rule == WinRule.MAX
+            ) { onRule(WinRule.MAX) }
+
+            Choice(
+                "Меньше очков — лучше",
+                rule == WinRule.MIN
+            ) { onRule(WinRule.MIN) }
+        }
+
+        MainButton("Начать партию", valid, onStart)
+    }
+}
+
+private fun parseScore(text: String): Int? {
+    return text.trim().toIntOrNull()?.takeIf { it in -9999..9999 }
+}
+
+private fun calculateTotals(
+    rounds: List<List<String>>,
+    count: Int
+): List<Long?> {
+    return List(count) { column ->
+        val values = rounds.map { parseScore(it[column]) }
+
+        if (values.any { it == null }) null
+        else values.sumOf { it!!.toLong() }
+    }
+}
+
+private fun savedTotals(game: SavedGame): List<Long> {
+    return List(game.players.size) { column ->
+        game.rounds.sumOf { it[column].toLong() }
+    }
+}
+
+private fun winnerText(
+    players: List<String>,
+    totals: List<Long>,
+    rule: WinRule
+): String {
+    if (totals.isEmpty()) return "Нет результатов"
+
+    val best = if (rule == WinRule.MAX) {
+        totals.maxOrNull()!!
+    } else {
+        totals.minOrNull()!!
+    }
+
+    val winners = players.filterIndexed { index, _ ->
+        totals[index] == best
+    }
+
+    return if (winners.size == 1) {
+        "Победитель: ${winners.first()}"
+    } else {
+        "Ничья: ${winners.joinToString(", ")}"
+    }
+}
+
+@Composable
+private fun GamePage(
+    name: String,
+    players: List<String>,
+    rule: WinRule,
+    rounds: SnapshotStateList<SnapshotStateList<String>>,
+    finished: Boolean,
+    animations: Boolean,
+    onAddRound: () -> Unit,
+    onFinish: () -> Unit,
+    onReset: () -> Unit
+) {
+    val totals = calculateTotals(rounds, players.size)
+    val valid = rounds.isNotEmpty() && totals.all { it != null }
+    val best = if (valid) {
+        if (rule == WinRule.MAX) totals.filterNotNull().maxOrNull()
+        else totals.filterNotNull().minOrNull()
+    } else null
+
+    Page {
+        PageTitle(
+            name,
+            if (finished) {
+                "Партия завершена · сохранено в истории"
+            } else {
+                "${players.size} игроков · ${rounds.size} раундов"
+            }
+        )
+
         Text(
-            text = "${players.size} игроков • " +
-                "${rounds.size} раундов • " +
-                if (rule == WinRule.MAX) {
-                    "Побеждает большая сумма"
-                } else {
-                    "Побеждает меньшая сумма"
-                },
-            color = Muted
+            if (rule == WinRule.MAX) {
+                "Побеждает максимальная сумма"
+            } else {
+                "Побеждает минимальная сумма"
+            },
+            color = MaterialTheme.colorScheme.primary
         )
 
         if (finished) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Mint.copy(alpha = 0.13f)
+            Panel {
+                Text(
+                    "ИТОГИ ПАРТИИ",
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 2.sp,
+                    fontWeight = FontWeight.Bold
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(22.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        "ИТОГИ ПАРТИИ",
-                        color = Mint,
-                        fontSize = 12.sp,
-                        letterSpacing = 2.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Text(
-                        resultText(rule, players, scores),
-                        fontSize = 23.sp,
-                        lineHeight = 31.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    winnerText(players, totals.filterNotNull(), rule),
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
-
-        Text(
-            text = "Общий счёт",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
 
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             players.forEachIndexed { index, player ->
-                val leading = best != null && scores[index] == best
+                val leading = best != null && totals[index] == best
+
+                val cardColor by animateColorAsState(
+                    targetValue = if (leading) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                    animationSpec = tween(if (animations) 250 else 0),
+                    label = "leader"
+                )
 
                 Card(
-                    modifier = Modifier.width(150.dp),
-                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.width(156.dp),
+                    shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (leading) {
-                            Color(0xFF302541)
-                        } else {
-                            Panel
-                        }
+                        containerColor = cardColor
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        PlayerAvatar(index)
+                        Text(player, fontWeight = FontWeight.Bold)
 
-                        Text(
-                            text = player,
-                            fontWeight = FontWeight.SemiBold
-                        )
-
-                        Text(
-                            text = scores[index]?.toString() ?: "—",
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PlayerColors[index]
-                        )
-
-                        Text(
-                            text = when {
-                                scores[index] == null -> "Ошибка ввода"
-                                finished && leading -> "Лучший результат"
-                                leading -> "В лидерах"
-                                else -> "Общий итог"
+                        AnimatedContent(
+                            targetState = totals[index]?.toString() ?: "—",
+                            transitionSpec = {
+                                fadeIn(tween(if (animations) 180 else 0)) togetherWith
+                                    fadeOut(tween(if (animations) 100 else 0))
                             },
-                            color = Muted,
-                            fontSize = 12.sp
+                            label = "score"
+                        ) { score ->
+                            Text(
+                                score,
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Text(
+                            when {
+                                totals[index] == null -> "Ошибка ввода"
+                                leading && finished -> "Лучший результат"
+                                leading -> "В лидерах"
+                                else -> "Общий счёт"
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
         }
 
-        SectionCard {
-            Text(
-                text = "Очки по раундам",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+        Panel {
+            Text("Очки по раундам", fontWeight = FontWeight.Bold)
 
             Text(
-                text = if (finished) {
-                    "Партия завершена. Счёт доступен только для просмотра."
-                } else {
-                    "Нажмите на число, чтобы изменить его. Таблица листается вправо."
-                },
-                color = Muted,
-                style = MaterialTheme.typography.bodySmall
+                "Таблица прокручивается вправо",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Column(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Раунд",
-                        modifier = Modifier.width(54.dp),
-                        color = Muted,
-                        fontSize = 12.sp
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("№", modifier = Modifier.width(32.dp))
 
-                    players.forEachIndexed { index, name ->
+                    players.forEach {
                         Text(
-                            text = name,
+                            it,
                             modifier = Modifier.width(100.dp),
-                            color = PlayerColors[index],
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
 
                 rounds.forEachIndexed { roundIndex, row ->
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${roundIndex + 1}".padStart(2, '0'),
-                            modifier = Modifier.width(54.dp),
-                            color = Muted,
-                            fontWeight = FontWeight.Bold
+                            "${roundIndex + 1}",
+                            modifier = Modifier.width(32.dp)
                         )
 
-                        row.forEachIndexed { playerIndex, value ->
+                        row.forEachIndexed { column, value ->
                             OutlinedTextField(
                                 value = value,
-                                onValueChange = {
-                                    row[playerIndex] = it
-                                },
+                                onValueChange = { row[column] = it },
                                 modifier = Modifier.width(100.dp),
-                                enabled = !finished,
                                 singleLine = true,
+                                readOnly = finished,
                                 isError = parseScore(value) == null,
                                 shape = RoundedCornerShape(14.dp),
                                 keyboardOptions = KeyboardOptions(
@@ -775,11 +902,10 @@ fun GameScreen(
                 }
             }
 
-            if (!allValid) {
+            if (!valid) {
                 Text(
-                    text = "Введите целые числа от −9999 до 9999 во все поля.",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
+                    "Во всех полях нужны целые числа от −9999 до 9999.",
+                    color = MaterialTheme.colorScheme.error
                 )
             }
         }
@@ -787,45 +913,264 @@ fun GameScreen(
         if (!finished) {
             OutlinedButton(
                 onClick = onAddRound,
-                enabled = allValid,
+                enabled = valid,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 54.dp),
-                shape = RoundedCornerShape(18.dp)
+                    .heightIn(min = 50.dp)
             ) {
-                Text("+  Добавить раунд", fontSize = 16.sp)
+                Text("+ Добавить раунд")
             }
 
-            Button(
-                onClick = onFinish,
-                enabled = allValid,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 58.dp),
-                shape = RoundedCornerShape(18.dp)
+            MainButton("Завершить партию", valid, onFinish)
+
+            TextButton(
+                onClick = onReset,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
-                Text(
-                    "Завершить партию",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Text("Отменить партию")
             }
         } else {
-            Button(
-                onClick = onNewGame,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 58.dp),
-                shape = RoundedCornerShape(18.dp)
-            ) {
+            MainButton("Новая партия", onClick = onReset)
+        }
+    }
+}
+
+private fun formattedDate(time: Long): String {
+    return SimpleDateFormat(
+        "dd.MM.yyyy · HH:mm",
+        Locale.getDefault()
+    ).format(Date(time))
+}
+
+@Composable
+private fun HistoryPage(
+    games: List<SavedGame>,
+    onOpen: (SavedGame) -> Unit,
+    onDelete: (SavedGame) -> Unit
+) {
+    Page {
+        PageTitle(
+            "История",
+            "Завершённые партии и ваши результаты"
+        )
+
+        if (games.isEmpty()) {
+            Panel {
                 Text(
-                    "Начать новую партию",
-                    fontSize = 16.sp,
+                    "Пока ни одной партии",
+                    fontSize = 21.sp,
                     fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Завершите игру — её результат появится здесь.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        games.forEach { game ->
+            key(game.id) {
+                Panel {
+                    Text(
+                        formattedDate(game.date),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+
+                    Text(
+                        game.name,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        winnerText(game.players, savedTotals(game), game.rule),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Text(
+                        "${game.players.size} игроков · ${game.rounds.size} раундов",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = { onOpen(game) }) {
+                            Text("Подробнее")
+                        }
+                        TextButton(onClick = { onDelete(game) }) {
+                            Text(
+                                "Удалить",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun HistoryDetails(
+    game: SavedGame,
+    onDismiss: () -> Unit
+) {
+    val totals = savedTotals(game)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(game.name) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(formattedDate(game.date))
+
+                Text(
+                    winnerText(game.players, totals, game.rule),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Text(
+                    if (game.rule == WinRule.MAX) {
+                        "Условие: больше очков — лучше"
+                    } else {
+                        "Условие: меньше очков — лучше"
+                    }
+                )
+
+                game.players.forEachIndexed { index, player ->
+                    Text("$player: ${totals[index]}")
+                }
+
+                HorizontalDivider()
+
+                Text("Раунды", fontWeight = FontWeight.Bold)
+
+                game.rounds.forEachIndexed { index, row ->
+                    Text(
+                        "Раунд ${index + 1}\n" +
+                            game.players.mapIndexed { playerIndex, player ->
+                                "$player: ${row[playerIndex]}"
+                            }.joinToString(" · ")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Закрыть")
+            }
+        }
+    )
+}
+
+@Composable
+private fun SettingsPage(
+    theme: String,
+    onTheme: (String) -> Unit,
+    accent: Int,
+    onAccent: (Int) -> Unit,
+    animations: Boolean,
+    onAnimations: (Boolean) -> Unit,
+    historySize: Int,
+    onClear: () -> Unit
+) {
+    Page {
+        PageTitle("Настройки", "Оформление под ваше настроение")
+
+        Panel {
+            Text("Тема приложения", fontWeight = FontWeight.Bold)
+
+            Choice("Как на устройстве", theme == "system") {
+                onTheme("system")
+            }
+            Choice("Светлая", theme == "light") {
+                onTheme("light")
+            }
+            Choice("Тёмная", theme == "dark") {
+                onTheme("dark")
+            }
+        }
+
+        Panel {
+            Text("Акцентный цвет", fontWeight = FontWeight.Bold)
+
+            AccentNames.forEachIndexed { index, name ->
+                Choice(name, accent == index) {
+                    onAccent(index)
+                }
+            }
+        }
+
+        Panel {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("Анимации", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Плавные переходы, смена счёта и подсветка лидера",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Switch(
+                    checked = animations,
+                    onCheckedChange = onAnimations
+                )
+            }
+        }
+
+        Panel {
+            Text("История игр", fontWeight = FontWeight.Bold)
+            Text("Сохранено партий: $historySize")
+
+            OutlinedButton(
+                onClick = onClear,
+                enabled = historySize > 0,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Очистить историю")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    message: String,
+    action: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(action)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
+            }
+        }
+    )
 }
