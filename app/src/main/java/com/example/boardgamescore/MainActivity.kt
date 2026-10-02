@@ -5,15 +5,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -25,12 +21,15 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.isSystemInDarkTheme
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -49,19 +48,14 @@ data class SavedGame(
     val rule: WinRule
 )
 
-private val AccentNames = listOf("Фиолетовый", "Синий", "Зелёный")
-private val DarkAccents = listOf(
-    Color(0xFFC2AAFF),
-    Color(0xFF9CCAFF),
-    Color(0xFF87DBB6)
-)
-private val LightAccents = listOf(
-    Color(0xFF7045B5),
-    Color(0xFF245FA6),
-    Color(0xFF176B4C)
-)
+private val LocalEnglish = staticCompositionLocalOf { false }
+private val LocalMotion = staticCompositionLocalOf { true }
 
-private class AppStorage(context: Context) {
+@Composable
+private fun tr(ru: String, en: String): String =
+    if (LocalEnglish.current) en else ru
+
+private class Storage(context: Context) {
     private val prefs = context.getSharedPreferences(
         "board_game_score",
         Context.MODE_PRIVATE
@@ -69,74 +63,73 @@ private class AppStorage(context: Context) {
 
     var theme: String
         get() = prefs.getString("theme", "system") ?: "system"
-        set(value) {
-            prefs.edit().putString("theme", value).apply()
-        }
+        set(value) { prefs.edit().putString("theme", value).apply() }
 
     var accent: Int
         get() = prefs.getInt("accent", 0).coerceIn(0, 2)
-        set(value) {
-            prefs.edit().putInt("accent", value).apply()
-        }
+        set(value) { prefs.edit().putInt("accent", value).apply() }
 
     var animations: Boolean
         get() = prefs.getBoolean("animations", true)
-        set(value) {
-            prefs.edit().putBoolean("animations", value).apply()
-        }
+        set(value) { prefs.edit().putBoolean("animations", value).apply() }
 
-    fun loadHistory(): List<SavedGame> {
-        return runCatching {
-            val array = JSONArray(prefs.getString("history", "[]"))
+    var english: Boolean
+        get() = prefs.getBoolean("english", false)
+        set(value) { prefs.edit().putBoolean("english", value).apply() }
 
-            List(array.length()) { index ->
-                val item = array.getJSONObject(index)
-                val players = item.getJSONArray("players")
-                val rounds = item.getJSONArray("rounds")
-
-                SavedGame(
-                    id = item.getString("id"),
-                    name = item.getString("name"),
-                    date = item.getLong("date"),
-                    players = List(players.length()) {
-                        players.getString(it)
-                    },
-                    rounds = List(rounds.length()) { rowIndex ->
-                        val row = rounds.getJSONArray(rowIndex)
+    fun loadHistory(): List<SavedGame> = runCatching {
+        val array = JSONArray(prefs.getString("history", "[]") ?: "[]")
+        buildList {
+            for (index in 0 until array.length()) {
+                // Повреждение одной записи не скрывает остальные.
+                runCatching {
+                    val item = array.getJSONObject(index)
+                    val names = item.getJSONArray("players")
+                    val rows = item.getJSONArray("rounds")
+                    val players = List(names.length()) { names.getString(it) }
+                    val rounds = List(rows.length()) { rowIndex ->
+                        val row = rows.getJSONArray(rowIndex)
                         List(row.length()) { row.getInt(it) }
-                    },
-                    rule = WinRule.valueOf(item.getString("rule"))
-                )
+                    }
+                    require(players.size in 2..8)
+                    require(rounds.isNotEmpty())
+                    require(rounds.all { row ->
+                        row.size == players.size &&
+                            row.all { it in -9999..9999 }
+                    })
+                    SavedGame(
+                        item.getString("id"),
+                        item.getString("name"),
+                        item.getLong("date"),
+                        players,
+                        rounds,
+                        WinRule.valueOf(item.getString("rule"))
+                    )
+                }.getOrNull()?.let { add(it) }
             }
-        }.getOrDefault(emptyList())
-    }
+        }
+    }.getOrDefault(emptyList())
 
     fun saveHistory(games: List<SavedGame>) {
         val array = JSONArray()
-
         games.forEach { game ->
-            val playerArray = JSONArray()
-            game.players.forEach { playerArray.put(it) }
-
-            val roundArray = JSONArray()
+            val names = JSONArray()
+            game.players.forEach { names.put(it) }
+            val rows = JSONArray()
             game.rounds.forEach { row ->
                 val values = JSONArray()
                 row.forEach { values.put(it) }
-                roundArray.put(values)
+                rows.put(values)
             }
-
-            array.put(
-                JSONObject().apply {
-                    put("id", game.id)
-                    put("name", game.name)
-                    put("date", game.date)
-                    put("players", playerArray)
-                    put("rounds", roundArray)
-                    put("rule", game.rule.name)
-                }
-            )
+            array.put(JSONObject().apply {
+                put("id", game.id)
+                put("name", game.name)
+                put("date", game.date)
+                put("players", names)
+                put("rounds", rows)
+                put("rule", game.rule.name)
+            })
         }
-
         prefs.edit().putString("history", array.toString()).apply()
     }
 }
@@ -144,311 +137,369 @@ private class AppStorage(context: Context) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val storage = AppStorage(this)
-
-        setContent {
-            ScoreApp(storage)
-        }
+        val storage = Storage(this)
+        setContent { ScoreApp(storage) }
     }
 }
 
+private fun parseScore(text: String): Int? =
+    text.trim().toIntOrNull()?.takeIf { it in -9999..9999 }
+
+private fun newRound(size: Int) =
+    mutableStateListOf<String>().apply {
+        repeat(size) { add("0") }
+    }
+
+private fun totals(
+    rounds: List<List<String>>,
+    count: Int
+): List<Long?> = List(count) { column ->
+    val values = rounds.map { parseScore(it[column]) }
+    if (values.any { it == null }) null
+    else values.sumOf { it!!.toLong() }
+}
+
+private fun savedTotals(game: SavedGame): List<Long> =
+    List(game.players.size) { column ->
+        game.rounds.sumOf { it[column].toLong() }
+    }
+
+private fun winner(
+    players: List<String>,
+    values: List<Long>,
+    rule: WinRule,
+    english: Boolean
+): String {
+    if (values.isEmpty()) return if (english) "No results" else "Нет результатов"
+    val best = if (rule == WinRule.MAX) values.maxOrNull()!!
+    else values.minOrNull()!!
+    val names = players.filterIndexed { index, _ -> values[index] == best }
+    val title = if (names.size == 1) {
+        if (english) "Winner" else "Победитель"
+    } else {
+        if (english) "Tie" else "Ничья"
+    }
+    return "$title: ${names.joinToString(", ")}"
+}
+
+private fun dateText(time: Long): String =
+    SimpleDateFormat("dd.MM.yyyy · HH:mm", Locale.getDefault()).format(Date(time))
+
 @Composable
-private fun ScoreApp(storage: AppStorage) {
+private fun ScoreApp(storage: Storage) {
     var theme by remember { mutableStateOf(storage.theme) }
     var accent by remember { mutableStateOf(storage.accent) }
-    var animations by remember { mutableStateOf(storage.animations) }
-
+    var motion by remember { mutableStateOf(storage.animations) }
+    var english by remember { mutableStateOf(storage.english) }
     var history by remember { mutableStateOf(storage.loadHistory()) }
     var tab by remember { mutableStateOf(0) }
 
-    var gameName by remember { mutableStateOf("") }
-    var players by remember { mutableStateOf(emptyList<String>()) }
-    var rule by remember { mutableStateOf(WinRule.MAX) }
-    val rounds = remember {
-        mutableStateListOf<SnapshotStateList<String>>()
-    }
-
-    // Форма создания не сбрасывается при переключении вкладок.
     var draftName by remember { mutableStateOf("") }
     val draftPlayers = remember { mutableStateListOf("", "") }
     var draftRule by remember { mutableStateOf(WinRule.MAX) }
 
     var active by remember { mutableStateOf(false) }
     var finished by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var players by remember { mutableStateOf(emptyList<String>()) }
+    var rule by remember { mutableStateOf(WinRule.MAX) }
+    val rounds = remember {
+        mutableStateListOf<SnapshotStateList<String>>()
+    }
 
-    var confirmFinish by remember { mutableStateOf(false) }
-    var confirmDiscard by remember { mutableStateOf(false) }
-    var confirmClear by remember { mutableStateOf(false) }
+    // finish / discard / clear / round / delete
+    var confirmation by remember { mutableStateOf<String?>(null) }
     var deleteId by remember { mutableStateOf<String?>(null) }
-    var selectedGame by remember { mutableStateOf<SavedGame?>(null) }
+    var selected by remember { mutableStateOf<SavedGame?>(null) }
+    var help by remember { mutableStateOf(false) }
 
-    val systemDark = isSystemInDarkTheme()
-    val dark = when (theme) {
-        "dark" -> true
-        "light" -> false
-        else -> systemDark
-    }
-
-    val targetAccent = if (dark) DarkAccents[accent] else LightAccents[accent]
-    val primary by animateColorAsState(
-        targetValue = targetAccent,
-        animationSpec = tween(if (animations) 300 else 0),
-        label = "accent"
-    )
-
-    val colors = if (dark) {
-        darkColorScheme(
-            primary = primary,
-            onPrimary = Color(0xFF181222),
-            primaryContainer = primary.copy(alpha = 0.18f),
-            background = Color(0xFF101117),
-            surface = Color(0xFF1B1D26),
-            surfaceVariant = Color(0xFF262936),
-            onSurface = Color(0xFFF2F0F8),
-            onBackground = Color(0xFFF2F0F8)
-        )
-    } else {
-        lightColorScheme(
-            primary = primary,
-            onPrimary = Color.White,
-            primaryContainer = primary.copy(alpha = 0.12f),
-            background = Color(0xFFF5F5FA),
-            surface = Color.White,
-            surfaceVariant = Color(0xFFEBEDF5),
-            onSurface = Color(0xFF20212C),
-            onBackground = Color(0xFF20212C)
-        )
-    }
-
-    fun resetGame() {
+    fun reset() {
         active = false
         finished = false
         players = emptyList()
         rounds.clear()
-        confirmDiscard = false
         draftName = ""
         draftPlayers.clear()
         draftPlayers.addAll(listOf("", ""))
         draftRule = WinRule.MAX
     }
 
-    BackHandler(enabled = active || tab != 0) {
-        if (tab != 0) {
-            tab = 0
-        } else {
-            confirmDiscard = true
-        }
+    fun updateHistory(value: List<SavedGame>) {
+        history = value
+        storage.saveHistory(value)
     }
 
-    MaterialTheme(colorScheme = colors) {
-        Scaffold(
-            containerColor = colors.background,
-            bottomBar = {
-                NavigationBar(
-                    containerColor = colors.surface,
-                    tonalElevation = 0.dp
-                ) {
-                    val titles = listOf("Игра", "История", "Настройки")
-                    val symbols = listOf("▶", "≡", "⚙")
+    val dark = when (theme) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
 
-                    titles.forEachIndexed { index, title ->
-                        NavigationBarItem(
-                            selected = tab == index,
-                            onClick = { tab = index },
-                            icon = {
-                                Text(
-                                    symbols[index],
-                                    fontSize = 23.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            },
-                            label = { Text(title) }
+    val darkAccents = listOf(
+        Color(0xFFC6A8FF), Color(0xFF8ECDFF), Color(0xFF88E3BF)
+    )
+    val lightAccents = listOf(
+        Color(0xFF7040B0), Color(0xFF175DA6), Color(0xFF176B4C)
+    )
+    val primary by animateColorAsState(
+        targetValue = if (dark) darkAccents[accent] else lightAccents[accent],
+        animationSpec = tween(if (motion) 350 else 0),
+        label = "themeAccent"
+    )
+
+    val scheme = if (dark) {
+        darkColorScheme(
+            primary = primary,
+            onPrimary = Color(0xFF171021),
+            secondary = Color(0xFF7ADBCB),
+            background = Color(0xFF101019),
+            surface = Color(0xFF1B1B29),
+            surfaceVariant = Color(0xFF292A3A),
+            onBackground = Color(0xFFF5F1FF),
+            onSurface = Color(0xFFF5F1FF)
+        )
+    } else {
+        lightColorScheme(
+            primary = primary,
+            onPrimary = Color.White,
+            secondary = Color(0xFF167D80),
+            background = Color(0xFFF5F3FC),
+            surface = Color(0xFFFFFBFF),
+            surfaceVariant = Color(0xFFEAE6F2),
+            onBackground = Color(0xFF231D30),
+            onSurface = Color(0xFF231D30)
+        )
+    }
+
+    BackHandler(enabled = active || tab != 0) {
+        if (tab != 0) tab = 0
+        else confirmation = "discard"
+    }
+
+    CompositionLocalProvider(
+        LocalEnglish provides english,
+        LocalMotion provides motion
+    ) {
+        MaterialTheme(colorScheme = scheme) {
+            Scaffold(
+                containerColor = scheme.background,
+                topBar = {
+                    Surface(color = scheme.background.copy(alpha = 0.95f)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "SCORE CLUB",
+                                color = scheme.primary,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 2.sp,
+                                fontSize = 14.sp
+                            )
+                            TextButton(onClick = { help = true }) {
+                                Text(tr("?  Помощь", "?  Help"))
+                            }
+                        }
+                    }
+                },
+                bottomBar = {
+                    NavigationBar(
+                        containerColor = scheme.surface,
+                        tonalElevation = 0.dp
+                    ) {
+                        val titles = listOf(
+                            tr("Игра", "Game"),
+                            tr("История", "History"),
+                            tr("Настройки", "Settings")
                         )
+                        val symbols = listOf("▶", "≡", "⚙")
+                        titles.forEachIndexed { index, title ->
+                            NavigationBarItem(
+                                selected = tab == index,
+                                onClick = { tab = index },
+                                icon = { Text(symbols[index], fontSize = 22.sp) },
+                                label = { Text(title) }
+                            )
+                        }
                     }
                 }
-            }
-        ) { padding ->
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .imePadding()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                colors.primary.copy(alpha = 0.10f),
-                                colors.background
+            ) { padding ->
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .imePadding()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    scheme.primary.copy(alpha = 0.20f),
+                                    scheme.background,
+                                    scheme.secondary.copy(alpha = 0.14f)
+                                )
                             )
                         )
-                    )
-            ) {
-                AnimatedContent(
-                    targetState = tab,
-                    transitionSpec = {
-                        fadeIn(tween(if (animations) 220 else 0)) togetherWith
-                            fadeOut(tween(if (animations) 120 else 0))
-                    },
-                    label = "tabs"
-                ) { currentTab ->
-                    when (currentTab) {
-                        0 -> {
-                            if (!active) {
+                ) {
+                    AnimatedContent(
+                        targetState = tab,
+                        transitionSpec = {
+                            (fadeIn(tween(if (motion) 250 else 0)) +
+                                slideInVertically(
+                                    tween(if (motion) 250 else 0)
+                                ) { it / 18 }) togetherWith
+                                fadeOut(tween(if (motion) 120 else 0))
+                        },
+                        label = "tabs"
+                    ) { current ->
+                        when (current) {
+                            0 -> if (!active) {
                                 SetupPage(
-                                    name = draftName,
-                                    onName = { draftName = it },
-                                    names = draftPlayers,
-                                    rule = draftRule,
-                                    onRule = { draftRule = it },
-                                    onStart = {
-                                        gameName = draftName.trim()
-                                        players = draftPlayers.map { it.trim() }
-                                        rule = draftRule
-
-                                        rounds.clear()
-                                        rounds.add(
-                                            mutableStateListOf<String>().apply {
-                                                repeat(players.size) { add("0") }
-                                            }
-                                        )
-
-                                        active = true
-                                        finished = false
-                                    }
-                                )
+                                    draftName,
+                                    { draftName = it },
+                                    draftPlayers,
+                                    draftRule,
+                                    { draftRule = it }
+                                ) {
+                                    name = draftName.trim()
+                                    players = draftPlayers.map { it.trim() }
+                                    rule = draftRule
+                                    rounds.clear()
+                                    rounds.add(newRound(players.size))
+                                    finished = false
+                                    active = true
+                                }
                             } else {
                                 GamePage(
-                                    name = gameName,
-                                    players = players,
-                                    rule = rule,
-                                    rounds = rounds,
-                                    finished = finished,
-                                    animations = animations,
-                                    onAddRound = {
-                                        rounds.add(
-                                            mutableStateListOf<String>().apply {
-                                                repeat(players.size) { add("0") }
-                                            }
-                                        )
-                                    },
-                                    onFinish = { confirmFinish = true },
+                                    name, players, rule, rounds, finished,
+                                    onAdd = { rounds.add(newRound(players.size)) },
+                                    onRemove = { confirmation = "round" },
+                                    onFinish = { confirmation = "finish" },
                                     onReset = {
-                                        if (finished) resetGame()
-                                        else confirmDiscard = true
+                                        if (finished) reset()
+                                        else confirmation = "discard"
                                     }
                                 )
                             }
+
+                            1 -> HistoryPage(
+                                history,
+                                onOpen = { selected = it },
+                                onDelete = {
+                                    deleteId = it.id
+                                    confirmation = "delete"
+                                }
+                            )
+
+                            2 -> SettingsPage(
+                                theme, {
+                                    theme = it
+                                    storage.theme = it
+                                },
+                                accent, {
+                                    accent = it
+                                    storage.accent = it
+                                },
+                                english, {
+                                    english = it
+                                    storage.english = it
+                                },
+                                motion, {
+                                    motion = it
+                                    storage.animations = it
+                                },
+                                history.size,
+                                { confirmation = "clear" }
+                            )
                         }
-
-                        1 -> HistoryPage(
-                            games = history,
-                            onOpen = { selectedGame = it },
-                            onDelete = { deleteId = it.id }
-                        )
-
-                        2 -> SettingsPage(
-                            theme = theme,
-                            onTheme = {
-                                theme = it
-                                storage.theme = it
-                            },
-                            accent = accent,
-                            onAccent = {
-                                accent = it
-                                storage.accent = it
-                            },
-                            animations = animations,
-                            onAnimations = {
-                                animations = it
-                                storage.animations = it
-                            },
-                            historySize = history.size,
-                            onClear = { confirmClear = true }
-                        )
                     }
                 }
             }
-        }
 
-        if (confirmFinish) {
-            ConfirmDialog(
-                title = "Завершить партию?",
-                message = "Результат сохранится в истории. Изменить очки после завершения нельзя.",
-                action = "Завершить",
-                onDismiss = { confirmFinish = false },
-                onConfirm = {
-                    val valid = rounds.all { row ->
-                        row.all { parseScore(it) != null }
+            if (help) HelpDialog { help = false }
+
+            selected?.let { game ->
+                HistoryDetails(game) { selected = null }
+            }
+
+            confirmation?.let { action ->
+                val title = when (action) {
+                    "finish" -> tr("Завершить партию?", "Finish game?")
+                    "discard" -> tr("Закрыть партию?", "Close game?")
+                    "round" -> tr("Удалить последний раунд?", "Delete last round?")
+                    "clear" -> tr("Очистить историю?", "Clear history?")
+                    else -> tr("Удалить запись?", "Delete entry?")
+                }
+                val message = when (action) {
+                    "finish" -> tr(
+                        "Результат сохранится в истории. Изменить очки после завершения нельзя.",
+                        "The result will be saved to history. Scores cannot be edited afterwards."
+                    )
+                    "discard" -> if (finished) tr(
+                        "Результат уже сохранён в истории.",
+                        "The result is already saved to history."
+                    ) else tr(
+                        "Незавершённая партия будет удалена.",
+                        "The unfinished game will be discarded."
+                    )
+                    "round" -> tr(
+                        "Очки последнего раунда будут удалены, итоги пересчитаются.",
+                        "The last round will be deleted and totals recalculated."
+                    )
+                    else -> tr(
+                        "Это действие нельзя отменить.",
+                        "This action cannot be undone."
+                    )
+                }
+
+                AlertDialog(
+                    onDismissRequest = { confirmation = null },
+                    title = { Text(title) },
+                    text = { Text(message) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            when (action) {
+                                "finish" -> {
+                                    val valid = rounds.isNotEmpty() &&
+                                        rounds.all { row ->
+                                            row.all { parseScore(it) != null }
+                                        }
+                                    if (valid && !finished) {
+                                        val game = SavedGame(
+                                            UUID.randomUUID().toString(),
+                                            name,
+                                            System.currentTimeMillis(),
+                                            players.toList(),
+                                            rounds.map { row ->
+                                                row.map { parseScore(it)!! }
+                                            },
+                                            rule
+                                        )
+                                        updateHistory(listOf(game) + history)
+                                        finished = true
+                                    }
+                                }
+                                "discard" -> reset()
+                                "round" -> if (!finished && rounds.size > 1) {
+                                    rounds.removeAt(rounds.lastIndex)
+                                }
+                                "clear" -> updateHistory(emptyList())
+                                "delete" -> updateHistory(
+                                    history.filterNot { it.id == deleteId }
+                                )
+                            }
+                            confirmation = null
+                        }) { Text(tr("Подтвердить", "Confirm")) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmation = null }) {
+                            Text(tr("Отмена", "Cancel"))
+                        }
                     }
-
-                    if (valid && !finished) {
-                        val saved = SavedGame(
-                            id = UUID.randomUUID().toString(),
-                            name = gameName,
-                            date = System.currentTimeMillis(),
-                            players = players.toList(),
-                            rounds = rounds.map { row ->
-                                row.map { parseScore(it)!! }
-                            },
-                            rule = rule
-                        )
-
-                        history = listOf(saved) + history
-                        storage.saveHistory(history)
-                        finished = true
-                    }
-
-                    confirmFinish = false
-                }
-            )
-        }
-
-        if (confirmDiscard) {
-            ConfirmDialog(
-                title = "Закрыть текущую партию?",
-                message = if (finished) {
-                    "Результат уже сохранён в истории."
-                } else {
-                    "Незавершённая партия будет удалена без сохранения."
-                },
-                action = "Закрыть",
-                onDismiss = { confirmDiscard = false },
-                onConfirm = { resetGame() }
-            )
-        }
-
-        if (confirmClear) {
-            ConfirmDialog(
-                title = "Очистить историю?",
-                message = "Все завершённые партии будут удалены. Отменить это действие нельзя.",
-                action = "Удалить всё",
-                onDismiss = { confirmClear = false },
-                onConfirm = {
-                    history = emptyList()
-                    storage.saveHistory(history)
-                    confirmClear = false
-                }
-            )
-        }
-
-        deleteId?.let { id ->
-            ConfirmDialog(
-                title = "Удалить партию?",
-                message = "Эта запись исчезнет из истории.",
-                action = "Удалить",
-                onDismiss = { deleteId = null },
-                onConfirm = {
-                    history = history.filterNot { it.id == id }
-                    storage.saveHistory(history)
-                    deleteId = null
-                }
-            )
-        }
-
-        selectedGame?.let { game ->
-            HistoryDetails(
-                game = game,
-                onDismiss = { selectedGame = null }
-            )
+                )
+            }
         }
     }
 }
@@ -456,7 +507,7 @@ private fun ScoreApp(storage: AppStorage) {
 @Composable
 private fun Page(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
@@ -466,16 +517,54 @@ private fun Page(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun Panel(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+private fun GlowPanel(
+    modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val motion = LocalMotion.current
+    val strength by animateFloatAsState(
+        targetValue = if (highlighted) 0.28f else 0.08f,
+        animationSpec = tween(if (motion) 350 else 0),
+        label = "glowStrength"
+    )
+    val shape = RoundedCornerShape(24.dp)
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = if (highlighted) 14.dp else 3.dp,
+                shape = shape,
+                ambientColor = colors.primary,
+                spotColor = colors.primary
+            ),
+        shape = shape,
+        color = colors.surface,
+        border = BorderStroke(
+            1.dp,
+            Brush.linearGradient(
+                listOf(
+                    colors.primary.copy(alpha = if (highlighted) 0.7f else 0.3f),
+                    colors.secondary.copy(alpha = 0.1f),
+                    colors.primary.copy(alpha = 0.15f)
+                )
+            )
         )
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            colors.primary.copy(alpha = strength),
+                            Color.Transparent,
+                            colors.secondary.copy(alpha = strength * 0.6f)
+                        )
+                    )
+                )
+                .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content
         )
@@ -483,13 +572,13 @@ private fun Panel(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun PageTitle(title: String, subtitle: String) {
+private fun Heading(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             title,
             fontSize = 30.sp,
-            lineHeight = 35.sp,
-            fontWeight = FontWeight.Bold
+            lineHeight = 36.sp,
+            fontWeight = FontWeight.ExtraBold
         )
         Text(
             subtitle,
@@ -507,9 +596,7 @@ private fun MainButton(
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         shape = RoundedCornerShape(18.dp)
     ) {
         Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -517,28 +604,24 @@ private fun MainButton(
 }
 
 @Composable
-private fun Choice(
-    title: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
+private fun Choice(text: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
         } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        },
-        modifier = Modifier.fillMaxWidth()
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        }
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             RadioButton(selected = selected, onClick = null)
-            Text(title, fontWeight = FontWeight.Medium)
+            Text(text, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -552,63 +635,44 @@ private fun SetupPage(
     onRule: (WinRule) -> Unit,
     onStart: () -> Unit
 ) {
-    val trimmed = names.map { it.trim() }
-    val validName = name.trim().length in 1..30
-
-    val errors = trimmed.map { player ->
+    val cleanNames = names.map { it.trim() }
+    val nameValid = name.trim().length in 1..30
+    val errors = cleanNames.map { player ->
         when {
-            player.isEmpty() -> "Введите имя"
-            player.length > 15 -> "Максимум 15 символов"
-            trimmed.count { it.equals(player, true) } > 1 ->
-                "Имя уже используется"
+            player.isEmpty() -> tr("Введите имя", "Enter a name")
+            player.length > 15 -> tr("Максимум 15 символов", "Maximum 15 characters")
+            cleanNames.count { it.equals(player, true) } > 1 ->
+                tr("Имя уже используется", "Name already used")
             else -> null
         }
     }
 
-    val valid = validName &&
-        names.size in 2..8 &&
-        errors.all { it == null }
-
     Page {
-        Text(
-            "BOARD GAME SCORE",
-            color = MaterialTheme.colorScheme.primary,
-            letterSpacing = 3.sp,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
+        Heading(
+            tr("Время играть", "Time to play"),
+            tr("Соберите компанию. Мы посчитаем очки.",
+                "Gather your friends. We'll keep score.")
         )
 
-        PageTitle(
-            "Время играть",
-            "Новая компания. Новая партия. Новый победитель."
-        )
-
-        Panel {
-            Text("Название игры", fontWeight = FontWeight.Bold)
-
+        GlowPanel(highlighted = true) {
+            Text(tr("01  Название игры", "01  Game name"), fontWeight = FontWeight.Bold)
             OutlinedTextField(
                 value = name,
                 onValueChange = onName,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Например, Уно") },
+                placeholder = { Text(tr("Например, Уно", "For example, UNO")) },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
-                isError = name.isNotEmpty() && !validName,
+                isError = name.isNotEmpty() && !nameValid,
                 supportingText = {
-                    Text(
-                        if (name.isNotEmpty() && !validName) {
-                            "Введите от 1 до 30 символов"
-                        } else {
-                            "${name.trim().length}/30"
-                        }
-                    )
+                    Text(tr("От 1 до 30 символов", "1–30 characters"))
                 }
             )
         }
 
-        Panel {
+        GlowPanel {
             Text(
-                "Участники · ${names.size}/8",
+                tr("02  Участники", "02  Players") + " · ${names.size}/8",
                 fontWeight = FontWeight.Bold
             )
 
@@ -618,26 +682,20 @@ private fun SetupPage(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .background(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                CircleShape
-                            ),
+                        Modifier.size(32.dp).background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            CircleShape
+                        ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            "${index + 1}",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("${index + 1}", color = MaterialTheme.colorScheme.primary)
                     }
 
                     OutlinedTextField(
                         value = value,
                         onValueChange = { names[index] = it },
                         modifier = Modifier.weight(1f),
-                        label = { Text("Игрок ${index + 1}") },
+                        label = { Text(tr("Игрок", "Player") + " ${index + 1}") },
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
                         isError = value.isNotEmpty() && errors[index] != null,
@@ -651,11 +709,9 @@ private fun SetupPage(
                     if (names.size > 2) {
                         TextButton(
                             onClick = { names.removeAt(index) },
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Text("×", fontSize = 24.sp)
-                        }
+                            modifier = Modifier.size(48.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("×", fontSize = 24.sp) }
                     }
                 }
             }
@@ -664,72 +720,121 @@ private fun SetupPage(
                 onClick = { names.add("") },
                 enabled = names.size < 8,
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("+ Добавить игрока")
-            }
+            ) { Text(tr("+ Добавить игрока", "+ Add player")) }
         }
 
-        Panel {
-            Text("Условие победы", fontWeight = FontWeight.Bold)
-
+        GlowPanel {
+            Text(tr("03  Условие победы", "03  Winning rule"), fontWeight = FontWeight.Bold)
             Choice(
-                "Больше очков — лучше",
+                tr("Больше очков — лучше", "Higher score wins"),
                 rule == WinRule.MAX
             ) { onRule(WinRule.MAX) }
-
             Choice(
-                "Меньше очков — лучше",
+                tr("Меньше очков — лучше", "Lower score wins"),
                 rule == WinRule.MIN
             ) { onRule(WinRule.MIN) }
         }
 
-        MainButton("Начать партию", valid, onStart)
+        MainButton(
+            tr("Начать партию", "Start game"),
+            nameValid && names.size in 2..8 && errors.all { it == null },
+            onStart
+        )
     }
 }
 
-private fun parseScore(text: String): Int? {
-    return text.trim().toIntOrNull()?.takeIf { it in -9999..9999 }
-}
+@Composable
+private fun ScoreNumber(value: Long?) {
+    val motion = LocalMotion.current
+    AnimatedContent(
+        targetState = value,
+        transitionSpec = {
+            val duration = if (motion) 260 else 0
+            val increasing = (targetState ?: 0L) >= (initialState ?: 0L)
 
-private fun calculateTotals(
-    rounds: List<List<String>>,
-    count: Int
-): List<Long?> {
-    return List(count) { column ->
-        val values = rounds.map { parseScore(it[column]) }
-
-        if (values.any { it == null }) null
-        else values.sumOf { it!!.toLong() }
+            (slideInVertically(tween(duration)) {
+                if (increasing) it else -it
+            } + fadeIn(tween(duration)) + scaleIn(
+                tween(duration), initialScale = 0.9f
+            )) togetherWith (
+                slideOutVertically(tween(duration)) {
+                    if (increasing) -it else it
+                } + fadeOut(tween(duration))
+            )
+        },
+        label = "scoreCounter"
+    ) { score ->
+        Text(
+            score?.toString() ?: "—",
+            fontSize = 32.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
 
-private fun savedTotals(game: SavedGame): List<Long> {
-    return List(game.players.size) { column ->
-        game.rounds.sumOf { it[column].toLong() }
-    }
-}
-
-private fun winnerText(
-    players: List<String>,
-    totals: List<Long>,
-    rule: WinRule
-): String {
-    if (totals.isEmpty()) return "Нет результатов"
-
-    val best = if (rule == WinRule.MAX) {
-        totals.maxOrNull()!!
-    } else {
-        totals.minOrNull()!!
+@Composable
+private fun RoundRow(
+    index: Int,
+    row: SnapshotStateList<String>,
+    finished: Boolean
+) {
+    val motion = LocalMotion.current
+    var visible by remember { mutableStateOf(!motion) }
+    LaunchedEffect(Unit) {
+        delay(16)
+        visible = true
     }
 
-    val winners = players.filterIndexed { index, _ ->
-        totals[index] == best
-    }
+    AnimatedVisibility(
+        visible = visible || !motion,
+        enter = fadeIn(tween(240)) + expandVertically(tween(280))
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "${index + 1}".padStart(2, '0'),
+                modifier = Modifier.width(36.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-    return if (winners.size == 1) {
-        "Победитель: ${winners.first()}"
-    } else {
-        "Ничья: ${winners.joinToString(", ")}"
+            row.forEachIndexed { column, value ->
+                Column(
+                    modifier = Modifier.width(108.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = { row[column] = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        readOnly = finished,
+                        singleLine = true,
+                        isError = parseScore(value) == null,
+                        shape = RoundedCornerShape(14.dp),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        )
+                    )
+
+                    if (!finished) {
+                        TextButton(
+                            onClick = {
+                                row[column] = if (value.startsWith("-")) {
+                                    value.removePrefix("-")
+                                } else {
+                                    "-" + value.removePrefix("+")
+                                }
+                            },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) {
+                            Text("±", fontSize = 18.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -740,47 +845,54 @@ private fun GamePage(
     rule: WinRule,
     rounds: SnapshotStateList<SnapshotStateList<String>>,
     finished: Boolean,
-    animations: Boolean,
-    onAddRound: () -> Unit,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
     onFinish: () -> Unit,
     onReset: () -> Unit
 ) {
-    val totals = calculateTotals(rounds, players.size)
-    val valid = rounds.isNotEmpty() && totals.all { it != null }
-    val best = if (valid) {
-        if (rule == WinRule.MAX) totals.filterNotNull().maxOrNull()
-        else totals.filterNotNull().minOrNull()
-    } else null
+    val english = LocalEnglish.current
+    val scores = totals(rounds, players.size)
+    val valid = rounds.isNotEmpty() && scores.all { it != null }
+    val best = if (!valid) null else if (rule == WinRule.MAX) {
+        scores.filterNotNull().maxOrNull()
+    } else {
+        scores.filterNotNull().minOrNull()
+    }
 
     Page {
-        PageTitle(
+        Heading(
             name,
-            if (finished) {
-                "Партия завершена · сохранено в истории"
-            } else {
-                "${players.size} игроков · ${rounds.size} раундов"
-            }
+            if (finished) tr(
+                "Завершено · сохранено в истории",
+                "Finished · saved to history"
+            ) else tr(
+                "Игроков: ${players.size} · Раундов: ${rounds.size}",
+                "Players: ${players.size} · Rounds: ${rounds.size}"
+            )
         )
 
         Text(
             if (rule == WinRule.MAX) {
-                "Побеждает максимальная сумма"
+                tr("Побеждает большая сумма", "Highest total wins")
             } else {
-                "Побеждает минимальная сумма"
+                tr("Побеждает меньшая сумма", "Lowest total wins")
             },
             color = MaterialTheme.colorScheme.primary
         )
 
-        if (finished) {
-            Panel {
+        AnimatedVisibility(
+            visible = finished,
+            enter = fadeIn(tween(if (LocalMotion.current) 350 else 0)) +
+                expandVertically(tween(if (LocalMotion.current) 350 else 0))
+        ) {
+            GlowPanel(highlighted = true) {
                 Text(
-                    "ИТОГИ ПАРТИИ",
+                    tr("ИТОГИ ПАРТИИ", "GAME RESULTS"),
                     color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 2.sp,
-                    fontWeight = FontWeight.Bold
+                    letterSpacing = 2.sp
                 )
                 Text(
-                    winnerText(players, totals.filterNotNull(), rule),
+                    winner(players, scores.filterNotNull(), rule, english),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -788,123 +900,69 @@ private fun GamePage(
         }
 
         Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             players.forEachIndexed { index, player ->
-                val leading = best != null && totals[index] == best
-
-                val cardColor by animateColorAsState(
-                    targetValue = if (leading) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-                    animationSpec = tween(if (animations) 250 else 0),
-                    label = "leader"
-                )
-
-                Card(
-                    modifier = Modifier.width(156.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = cardColor
-                    )
+                val leading = best != null && scores[index] == best
+                GlowPanel(
+                    modifier = Modifier.width(166.dp),
+                    highlighted = leading
                 ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(player, fontWeight = FontWeight.Bold)
-
-                        AnimatedContent(
-                            targetState = totals[index]?.toString() ?: "—",
-                            transitionSpec = {
-                                fadeIn(tween(if (animations) 180 else 0)) togetherWith
-                                    fadeOut(tween(if (animations) 100 else 0))
-                            },
-                            label = "score"
-                        ) { score ->
-                            Text(
-                                score,
-                                fontSize = 32.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        Text(
-                            when {
-                                totals[index] == null -> "Ошибка ввода"
-                                leading && finished -> "Лучший результат"
-                                leading -> "В лидерах"
-                                else -> "Общий счёт"
-                            },
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(player, fontWeight = FontWeight.Bold)
+                    ScoreNumber(scores[index])
+                    Text(
+                        when {
+                            scores[index] == null -> tr("Ошибка ввода", "Invalid score")
+                            leading && finished -> tr("Лучший результат", "Best result")
+                            leading -> tr("В лидерах", "Leading")
+                            else -> tr("Общий счёт", "Total score")
+                        },
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
 
-        Panel {
-            Text("Очки по раундам", fontWeight = FontWeight.Bold)
-
+        GlowPanel {
+            Text(tr("Очки по раундам", "Round scores"), fontWeight = FontWeight.Bold)
             Text(
-                "Таблица прокручивается вправо",
-                style = MaterialTheme.typography.bodySmall,
+                tr("Листайте таблицу вправо", "Swipe the table horizontally"),
+                fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Column(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                Modifier.horizontalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("№", modifier = Modifier.width(32.dp))
-
+                    Text("№", modifier = Modifier.width(36.dp))
                     players.forEach {
                         Text(
                             it,
-                            modifier = Modifier.width(100.dp),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            modifier = Modifier.width(108.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
-                rounds.forEachIndexed { roundIndex, row ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "${roundIndex + 1}",
-                            modifier = Modifier.width(32.dp)
-                        )
-
-                        row.forEachIndexed { column, value ->
-                            OutlinedTextField(
-                                value = value,
-                                onValueChange = { row[column] = it },
-                                modifier = Modifier.width(100.dp),
-                                singleLine = true,
-                                readOnly = finished,
-                                isError = parseScore(value) == null,
-                                shape = RoundedCornerShape(14.dp),
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number
-                                )
-                            )
-                        }
+                rounds.forEachIndexed { index, row ->
+                    // Удаление поддерживается только с конца списка.
+                    key(index) {
+                        RoundRow(index, row, finished)
                     }
                 }
             }
 
             if (!valid) {
                 Text(
-                    "Во всех полях нужны целые числа от −9999 до 9999.",
+                    tr(
+                        "Заполните все поля целыми числами от −9999 до 9999.",
+                        "Fill every field with a whole number from −9999 to 9999."
+                    ),
                     color = MaterialTheme.colorScheme.error
                 )
             }
@@ -912,34 +970,29 @@ private fun GamePage(
 
         if (!finished) {
             OutlinedButton(
-                onClick = onAddRound,
+                onClick = onAdd,
                 enabled = valid,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 50.dp)
-            ) {
-                Text("+ Добавить раунд")
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)
+            ) { Text(tr("+ Добавить раунд", "+ Add round")) }
+
+            if (rounds.size > 1) {
+                TextButton(
+                    onClick = onRemove,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(tr("Удалить последний раунд", "Delete last round"))
+                }
             }
 
-            MainButton("Завершить партию", valid, onFinish)
+            MainButton(tr("Завершить партию", "Finish game"), valid, onFinish)
 
-            TextButton(
-                onClick = onReset,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            ) {
-                Text("Отменить партию")
+            TextButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
+                Text(tr("Отменить партию", "Discard game"))
             }
         } else {
-            MainButton("Новая партия", onClick = onReset)
+            MainButton(tr("Новая партия", "New game"), onClick = onReset)
         }
     }
-}
-
-private fun formattedDate(time: Long): String {
-    return SimpleDateFormat(
-        "dd.MM.yyyy · HH:mm",
-        Locale.getDefault()
-    ).format(Date(time))
 }
 
 @Composable
@@ -948,62 +1001,55 @@ private fun HistoryPage(
     onOpen: (SavedGame) -> Unit,
     onDelete: (SavedGame) -> Unit
 ) {
+    val english = LocalEnglish.current
+
     Page {
-        PageTitle(
-            "История",
-            "Завершённые партии и ваши результаты"
+        Heading(
+            tr("История", "History"),
+            tr("Ваши партии и победы", "Your games and victories")
         )
 
         if (games.isEmpty()) {
-            Panel {
+            GlowPanel {
                 Text(
-                    "Пока ни одной партии",
-                    fontSize = 21.sp,
+                    tr("Здесь появятся ваши игры", "Your games will appear here"),
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    "Завершите игру — её результат появится здесь.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(tr(
+                    "Завершите первую партию, чтобы сохранить результат.",
+                    "Finish your first game to save its result."
+                ))
             }
         }
 
         games.forEach { game ->
             key(game.id) {
-                Panel {
+                GlowPanel {
                     Text(
-                        formattedDate(game.date),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-
-                    Text(
-                        game.name,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Text(
-                        winnerText(game.players, savedTotals(game), game.rule),
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Text(
-                        "${game.players.size} игроков · ${game.rounds.size} раундов",
+                        dateText(game.date),
+                        fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-
+                    Text(game.name, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        winner(game.players, savedTotals(game), game.rule, english),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(tr(
+                        "Игроков: ${game.players.size} · Раундов: ${game.rounds.size}",
+                        "Players: ${game.players.size} · Rounds: ${game.rounds.size}"
+                    ))
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         TextButton(onClick = { onOpen(game) }) {
-                            Text("Подробнее")
+                            Text(tr("Подробнее", "Details"))
                         }
                         TextButton(onClick = { onDelete(game) }) {
                             Text(
-                                "Удалить",
+                                tr("Удалить", "Delete"),
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
@@ -1015,60 +1061,49 @@ private fun HistoryPage(
 }
 
 @Composable
-private fun HistoryDetails(
-    game: SavedGame,
-    onDismiss: () -> Unit
-) {
-    val totals = savedTotals(game)
+private fun HistoryDetails(game: SavedGame, onDismiss: () -> Unit) {
+    val scores = savedTotals(game)
+    val english = LocalEnglish.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(game.name) },
         text = {
             Column(
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
+                Modifier.heightIn(max = 420.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text(formattedDate(game.date))
-
+                Text(dateText(game.date))
                 Text(
-                    winnerText(game.players, totals, game.rule),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    winner(game.players, scores, game.rule, english),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
                 )
-
                 Text(
                     if (game.rule == WinRule.MAX) {
-                        "Условие: больше очков — лучше"
+                        tr("Больше очков — лучше", "Higher score wins")
                     } else {
-                        "Условие: меньше очков — лучше"
+                        tr("Меньше очков — лучше", "Lower score wins")
                     }
                 )
-
                 game.players.forEachIndexed { index, player ->
-                    Text("$player: ${totals[index]}")
+                    Text("$player: ${scores[index]}")
                 }
-
                 HorizontalDivider()
-
-                Text("Раунды", fontWeight = FontWeight.Bold)
-
+                Text(tr("Раунды", "Rounds"), fontWeight = FontWeight.Bold)
                 game.rounds.forEachIndexed { index, row ->
                     Text(
-                        "Раунд ${index + 1}\n" +
-                            game.players.mapIndexed { playerIndex, player ->
-                                "$player: ${row[playerIndex]}"
+                        tr("Раунд", "Round") + " ${index + 1}\n" +
+                            game.players.mapIndexed { column, player ->
+                                "$player: ${row[column]}"
                             }.joinToString(" · ")
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Закрыть")
-            }
+            TextButton(onClick = onDismiss) { Text(tr("Закрыть", "Close")) }
         }
     )
 }
@@ -1079,98 +1114,196 @@ private fun SettingsPage(
     onTheme: (String) -> Unit,
     accent: Int,
     onAccent: (Int) -> Unit,
-    animations: Boolean,
-    onAnimations: (Boolean) -> Unit,
-    historySize: Int,
+    english: Boolean,
+    onEnglish: (Boolean) -> Unit,
+    motion: Boolean,
+    onMotion: (Boolean) -> Unit,
+    historyCount: Int,
     onClear: () -> Unit
 ) {
     Page {
-        PageTitle("Настройки", "Оформление под ваше настроение")
+        Heading(
+            tr("Настройки", "Settings"),
+            tr("Ваш стиль. Ваша игра.", "Your style. Your game.")
+        )
 
-        Panel {
-            Text("Тема приложения", fontWeight = FontWeight.Bold)
+        GlowPanel(highlighted = true) {
+            Text(tr("Язык интерфейса", "Interface language"), fontWeight = FontWeight.Bold)
+            Choice("Русский", !english) { onEnglish(false) }
+            Choice("English", english) { onEnglish(true) }
+        }
 
-            Choice("Как на устройстве", theme == "system") {
+        GlowPanel {
+            Text(tr("Тема", "Theme"), fontWeight = FontWeight.Bold)
+            Choice(tr("Как на устройстве", "System"), theme == "system") {
                 onTheme("system")
             }
-            Choice("Светлая", theme == "light") {
+            Choice(tr("Светлая", "Light"), theme == "light") {
                 onTheme("light")
             }
-            Choice("Тёмная", theme == "dark") {
+            Choice(tr("Тёмная", "Dark"), theme == "dark") {
                 onTheme("dark")
             }
         }
 
-        Panel {
-            Text("Акцентный цвет", fontWeight = FontWeight.Bold)
-
-            AccentNames.forEachIndexed { index, name ->
-                Choice(name, accent == index) {
-                    onAccent(index)
-                }
+        GlowPanel {
+            Text(tr("Акцентный цвет", "Accent color"), fontWeight = FontWeight.Bold)
+            listOf(
+                tr("Аметист", "Amethyst"),
+                tr("Океан", "Ocean"),
+                tr("Изумруд", "Emerald")
+            ).forEachIndexed { index, title ->
+                Choice(title, accent == index) { onAccent(index) }
             }
         }
 
-        Panel {
+        GlowPanel {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("Анимации", fontWeight = FontWeight.Bold)
+                    Text(tr("Анимации", "Animations"), fontWeight = FontWeight.Bold)
                     Text(
-                        "Плавные переходы, смена счёта и подсветка лидера",
-                        style = MaterialTheme.typography.bodySmall,
+                        tr(
+                            "Переходы, изменение счёта и появление раундов",
+                            "Transitions, score changes and round appearance"
+                        ),
+                        fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                Switch(
-                    checked = animations,
-                    onCheckedChange = onAnimations
-                )
+                Switch(checked = motion, onCheckedChange = onMotion)
             }
         }
 
-        Panel {
-            Text("История игр", fontWeight = FontWeight.Bold)
-            Text("Сохранено партий: $historySize")
-
+        GlowPanel {
+            Text(tr("История игр", "Game history"), fontWeight = FontWeight.Bold)
+            Text(tr("Сохранено партий: ", "Saved games: ") + historyCount)
             OutlinedButton(
                 onClick = onClear,
-                enabled = historySize > 0,
+                enabled = historyCount > 0,
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Очистить историю")
-            }
+            ) { Text(tr("Очистить историю", "Clear history")) }
         }
     }
 }
 
 @Composable
-private fun ConfirmDialog(
-    title: String,
-    message: String,
-    action: String,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
+private fun HelpDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(message) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(action)
+        title = { Text(tr("Во что поиграть?", "What can you play?")) },
+        text = {
+            Column(
+                Modifier.heightIn(max = 440.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    tr(
+                        "Приложение складывает очки по раундам и сравнивает итоговые суммы. Правила игр и особые условия победы нужно проверять самостоятельно.",
+                        "The app adds round scores and compares totals. You must check game rules and special winning conditions yourself."
+                    )
+                )
+
+                HelpItem(
+                    "UNO",
+                    tr(
+                        "При классическом подсчёте записывайте очки, полученные победителем раздачи. Выберите «Больше очков — лучше». Когда достигнут нужный порог, завершите партию вручную.",
+                        "With classic scoring, enter the points earned by the hand winner. Select “Higher score wins”. Finish manually when the target is reached."
+                    )
+                )
+
+                HelpItem(
+                    tr("Скрэббл / Эрудит", "Scrabble"),
+                    tr(
+                        "Записывайте очки за ходы. Выберите большую сумму. Штрафы и финальные поправки внесите отдельным раундом.",
+                        "Record turn scores. Select the highest total. Enter penalties and final adjustments as a separate round."
+                    )
+                )
+
+                HelpItem(
+                    tr("Домино", "Dominoes"),
+                    tr(
+                        "Для варианта со штрафными очками за оставшиеся кости выберите меньшую сумму. Другие варианты могут использовать иной подсчёт.",
+                        "For variants that assign penalty points for remaining tiles, select the lowest total. Other variants may use different scoring."
+                    )
+                )
+
+                HelpItem(
+                    tr("Рамми", "Rummy"),
+                    tr(
+                        "Подходит для записи результатов раздач. Выберите большую или меньшую сумму в зависимости от правил вашего варианта.",
+                        "Track hand results. Choose the highest or lowest total according to the rules of your variant."
+                    )
+                )
+
+                HelpItem(
+                    tr("Ятцы / покер на костях", "Yahtzee / dice poker"),
+                    tr(
+                        "Записывайте очки за категории отдельными раундами, бонусы — отдельно. Выберите большую сумму. Проверки категорий в приложении нет.",
+                        "Record category scores as rounds and add bonuses separately. Select the highest total. The app does not validate categories."
+                    )
+                )
+
+                HelpItem(
+                    tr("Викторины и домашние турниры", "Quizzes and home tournaments"),
+                    tr(
+                        "Начисляйте очки за ответы или задания. Для командной игры используйте названия команд вместо имён.",
+                        "Award points for answers or challenges. For team games, enter team names instead of player names."
+                    )
+                )
+
+                HorizontalDivider()
+
+                HelpItem(
+                    tr("Как пользоваться", "How to use"),
+                    tr(
+                        "1. Создайте партию и добавьте 2–8 участников.\n" +
+                            "2. Выберите условие победы.\n" +
+                            "3. Введите очки для каждого участника. Если очков нет — оставьте 0.\n" +
+                            "4. Кнопка ± меняет знак числа.\n" +
+                            "5. Добавляйте раунды и исправляйте очки до завершения.\n" +
+                            "6. Завершите партию — результат появится в истории.",
+                        "1. Create a game with 2–8 players.\n" +
+                            "2. Select the winning rule.\n" +
+                            "3. Enter each player's score. Leave 0 if they earned no points.\n" +
+                            "4. Use ± to change a number's sign.\n" +
+                            "5. Add rounds and edit scores before finishing.\n" +
+                            "6. Finish the game to save it to history."
+                    )
+                )
+
+                HelpItem(
+                    tr("Сохранение", "Saving"),
+                    tr(
+                        "История и настройки сохраняются на этом устройстве. Незавершённая партия хранится в памяти и может потеряться при закрытии процесса Android. Удаление приложения удаляет его данные.",
+                        "History and settings are saved on this device. An unfinished game is kept in memory and may be lost if Android closes the process. Uninstalling the app removes its data."
+                    )
+                )
             }
         },
-        dismissButton = {
+        confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена")
+                Text(tr("Понятно", "Got it"))
             }
         }
     )
+}
+
+@Composable
+private fun HelpItem(title: String, description: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            title,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp
+        )
+        Text(description, style = MaterialTheme.typography.bodyMedium)
+    }
 }
