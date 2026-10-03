@@ -1282,14 +1282,6 @@ private fun HelpDialog(
             "History and settings are saved on this device. An unfinished game is kept only while the app is running."
           )
         )
-
-        HelpItem(
-          title = tr("Что не поддерживается", "Not included"),
-          description = tr(
-            "В приложении нет азартных игр, денежных ставок, казино-режимов, экспорта, отправки результатов и виджета.",
-            "The app does not include gambling, money betting, casino modes, exporting, result sharing or a widget."
-          )
-        )
       }
     },
     confirmButton = {
