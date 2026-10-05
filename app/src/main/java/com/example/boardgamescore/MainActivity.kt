@@ -872,7 +872,11 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
       }
     }
     GlowPanel {
-      Text(tr("Ход и таймер", "Turn and timer"), fontWeight = FontWeight.Bold)
+      Text(
+  tr("Инструменты партии", "Game tools"),
+  fontSize = 17.sp,
+  fontWeight = FontWeight.Bold
+)
       Text(tr("Ходит: ${emojis.getOrElse(safeTurn) { "" }} ${players.getOrElse(safeTurn) { "" }}", "To move: ${emojis.getOrElse(safeTurn) { "" }} ${players.getOrElse(safeTurn) { "" }}"))
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { onTurn((safeTurn + 1) % players.size) }, enabled = !finished) { Text(tr("Дальше ›", "Next ›")) }
@@ -902,7 +906,12 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
           mod = Modifier.width(178.dp),
           hi = lead
         ) {
-          Text("${emojis.getOrElse(i) { "" }} $p", fontWeight = FontWeight.Bold)
+          Text(
+  text = "${emojis.getOrElse(i) { "" }}  $p",
+  fontSize = 16.sp,
+  fontWeight = FontWeight.Bold,
+  maxLines = 1
+)
           if (i == safeTurn && !finished) Text(tr("● ходит", "● to move"), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
           ScoreNumber(sc[i])
           if (!finished && valid) {
