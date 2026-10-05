@@ -577,11 +577,11 @@ private fun MainButton(t: String, e: Boolean = true, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Choice(t: String, sel: Boolean, onClick: () -> Unit) {
+private fun Choice(text: String, sel: Boolean, onClick: () -> Unit) {
   Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = if (sel) MaterialTheme.colorScheme.primary.copy(0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(0.35f)) {
     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       RadioButton(selected = sel, onClick = null)
-      Text(t, modifier = Modifier.weight(1f))
+      Text(text, modifier = Modifier.weight(1f))
     }
   }
 }
@@ -795,7 +795,10 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
       players.forEachIndexed { i, p ->
         val lead = best != null && sc[i] == best
-        GlowPanel(modifier = Modifier.width(178.dp), hi = lead) {
+        GlowPanel(
+          mod = Modifier.width(178.dp),
+          hi = lead
+        ) {
           Text("${emojis.getOrElse(i) { "" }} $p", fontWeight = FontWeight.Bold)
           if (i == safeTurn && !finished) Text(tr("● ходит", "● to move"), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
           ScoreNumber(sc[i])
@@ -827,17 +830,23 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
                 row.forEachIndexed { c, _ ->
                   Column(Modifier.width(108.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     val cur = row[c]
-                    OutlinedTextField(cur, {
-                      if (cur != it) {
-                        val before = rounds.map { it.toList() }
-                        val lastUndo = undoStack.lastOrNull()
-                        if (lastUndo == null || lastUndo != before) {
-                          undoStack.add(before)
-                          if (undoStack.size > 40) undoStack.removeAt(0)
+                    OutlinedTextField(
+                      value = cur,
+                      onValueChange = { newValue ->
+                        if (!finished && cur != newValue) {
+                          pushUndo()
+                          row[c] = newValue
                         }
-                      }
-                      row[c] = it
-                    }, Modifier.fillMaxWidth(), readOnly = finished, singleLine = true, isError = parseScore(cur) == null, shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                      },
+                      modifier = Modifier.fillMaxWidth(),
+                      readOnly = finished,
+                      singleLine = true,
+                      isError = parseScore(cur) == null,
+                      shape = RoundedCornerShape(14.dp),
+                      keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                      )
+                    )
                     if (!finished) TextButton(onClick = { row[c] = if (cur.startsWith("-")) cur.removePrefix("-") else "-" + cur.removePrefix("+") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("±", fontSize = 18.sp) }
                   }
                 }
@@ -982,7 +991,7 @@ private fun SettingsPage(theme: String, onTheme: (String) -> Unit, accent: Int, 
   Page {
     Heading(tr("Настройки", "Settings"), tr("Ваш стиль. Ваша игра.", "Your style. Your game."))
     GlowPanel(hi = true) {
-            Text(
+      Text(
         tr("Язык интерфейса", "Interface language"),
         fontWeight = FontWeight.Bold
       )
