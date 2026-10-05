@@ -352,8 +352,12 @@ private fun ScoreApp(s: Storage) {
   var draftTeamA by remember { mutableStateOf("Команда А") }
   var draftTeamB by remember { mutableStateOf("Команда Б") }
   var draftNotes by remember { mutableStateOf("") }
-  var active by remember { mutableStateOf(false) }
-  var finished by remember { mutableStateOf(false) }
+  // примитивы:
+var active by rememberSaveable { mutableStateOf(false) }
+var finished by rememberSaveable { mutableStateOf(false) }
+var turn by rememberSaveable { mutableStateOf(0) }
+// списки rounds/players/starts — в GameViewModel : ViewModel,
+// иначе пересоздание Activity сбросит партию в ноль
   var name by remember { mutableStateOf("") }
   var players by remember { mutableStateOf(emptyList<String>()) }
   var emojis by remember { mutableStateOf(emptyList<String>()) }
@@ -364,9 +368,7 @@ private fun ScoreApp(s: Storage) {
   var teamMode by remember { mutableStateOf(false) }
   var teamAssign by remember { mutableStateOf(emptyList<Int>()) }
   var teamNames by remember { mutableStateOf(listOf("A", "B")) }
-  val rounds = remember { mutableStateListOf<SnapshotStateList<String>>() }
   val undoStack = remember { mutableStateListOf<List<List<String>>>() }
-  var turn by remember { mutableStateOf(0) }
   var big by remember { mutableStateOf(false) }
   var confirm by remember { mutableStateOf<String?>(null) }
   var deleteId by remember { mutableStateOf<String?>(null) }
@@ -427,7 +429,7 @@ private fun ScoreApp(s: Storage) {
     "amoled" -> true
     else -> isSystemInDarkTheme()
   }
-  val useAmoled = theme == "amoled" || style == 3
+  val useAmoled = theme == "amoled"
   val darkAcc = listOf(Color(0xFFC6A8FF), Color(0xFF8ECDFF), Color(0xFF88E3BF))
   val lightAcc = listOf(Color(0xFF7040B0), Color(0xFF175DA6), Color(0xFF176B4C))
   val primary by animateColorAsState(
@@ -446,8 +448,10 @@ private fun ScoreApp(s: Storage) {
     else -> Brush.linearGradient(listOf(primary.copy(0.22f), scheme.background, scheme.secondary.copy(0.14f)))
   }
 
-  BackHandler(enabled = active || tab != 0) {
-    if (tab != 0) tab = 0 else confirm = "discard"
+  BackHandler(enabled = big || active || tab != 0) {
+  if (big) big = false
+  else if (tab != 0) tab = 0
+  else confirm = "discard"
   }
 
   CompositionLocalProvider(LocalEnglish provides english, LocalMotion provides motion) {
@@ -660,7 +664,7 @@ private fun Choice(
     ) {
       RadioButton(
         selected = sel,
-        onClick = null
+        onClick = onClick
       )
       Text(
         text = text,
@@ -841,13 +845,14 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
   val headsWord = if (en) "Heads" else "Орёл"
   val tailsWord = if (en) "Tails" else "Решка"
   val safeTurn = if (players.isNotEmpty()) turn % players.size else 0
-  LaunchedEffect(valid, sc) {
-    if (valid && !finished && target > 0) {
-      val vs = sc.filterNotNull()
-      val hit = if (rule == WinRule.MAX) vs.any { it >= target } else vs.any { it <= target }
-      if (hit) onAutoFinish()
-    }
+var autoAsked by remember(target) { mutableStateOf(false) }
+LaunchedEffect(valid, sc) {
+  if (valid && !finished && target > 0 && !autoAsked) {
+    val vs = sc.filterNotNull()
+    val hit = if (rule == WinRule.MAX) vs.any { it >= target } else vs.any { it <= target }
+    if (hit) { autoAsked = true; onFinishAsk() } // только диалог "Завершить?"
   }
+}
   LaunchedEffect(running, left) {
     if (running && left > 0) { delay(1000); left -= 1 }
     else if (running && left <= 0) { running = false; if (timerLen > 0) vibrateNow(ctx) }
@@ -883,7 +888,7 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
         OutlinedButton(onClick = { dice = Random.nextInt(1, 7) }) { Text("🎲 ${dice ?: "–"}") }
         OutlinedButton(onClick = { coin = if (Random.nextBoolean()) headsWord else tailsWord }) { Text("🪙 ${coin ?: "–"}") }
       }
-      OutlinedButton(onClick = { onTurn(Random.nextInt(players.size)) }) { Text("🎲") }
+      OutlinedButton(onClick = { onTurn(Random.nextInt(players.size)) }){ Text(tr("🎲 Первый ход","🎲 First")) }
       Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(0, 30, 60, 90).forEach { d ->
           FilterChip(d == timerLen, { timerLen = d; left = d; running = false }, label = { Text(if (d == 0) tr("Выкл", "Off") else "${d}c") })
@@ -944,12 +949,13 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
                     val cur = row[c]
                     OutlinedTextField(
                       value = cur,
-                      onValueChange = { newValue ->
-                        if (!finished && cur != newValue) {
-                          pushUndo()
-                          row[c] = newValue
-                        }
-                      },
+                      Modifier.onFocusChanged {
+                        if (it.isFocused && !finished) pushUndo()
+                          },
+// ...
+                          onValueChange = { newValue ->
+                        if (!finished) row[c] = newValue
+                          },
                       modifier = Modifier.fillMaxWidth(),
                       readOnly = finished,
                       singleLine = true,
@@ -1061,10 +1067,12 @@ private fun StatsPage(games: List<SavedGame>) {
           Triple(tt[idx], tt[idx] == best, tt.count { it == best } > 1)
         }
       }
-      val wins = res.count { it.second && !it.third }
-      val ties = res.count { it.third }
-      val avg = if (res.isEmpty()) 0.0 else res.map { it.first.toDouble() }.average()
-      val bestScore = res.map { it.first }.maxOrNull() ?: 0L
+      // res надо хранить с правилом: Triple(score, isBest, isTie) + rule из SavedGame
+val wins = res.count { it.second && !it.third }
+val ties = res.count { it.second && it.third } // только если сам в дележе 1 места
+val bestMax = res.filter { it.thirdRule == WinRule.MAX }.map { it.first }.maxOrNull()
+val bestMin = res.filter { it.thirdRule == WinRule.MIN }.map { it.first }.minOrNull()
+val avg = if (res.isEmpty()) 0.0 else res.map { it.first.toDouble() }.average()
       val rate = if (played > 0) "${wins * 100 / played}%" else "—"
       GlowPanel {
         Text(n, fontSize = 20.sp, fontWeight = FontWeight.Bold)
