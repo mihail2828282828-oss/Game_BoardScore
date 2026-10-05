@@ -1,6 +1,5 @@
 package com.example.boardgamescore
 
-import androidx.compose.ui.focus.onFocusChanged
 import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -353,12 +352,8 @@ private fun ScoreApp(s: Storage) {
   var draftTeamA by remember { mutableStateOf("Команда А") }
   var draftTeamB by remember { mutableStateOf("Команда Б") }
   var draftNotes by remember { mutableStateOf("") }
-  // примитивы:
-var active by rememberSaveable { mutableStateOf(false) }
-var finished by rememberSaveable { mutableStateOf(false) }
-var turn by rememberSaveable { mutableStateOf(0) }
-// списки rounds/players/starts — в GameViewModel : ViewModel,
-// иначе пересоздание Activity сбросит партию в ноль
+  var active by remember { mutableStateOf(false) }
+  var finished by remember { mutableStateOf(false) }
   var name by remember { mutableStateOf("") }
   var players by remember { mutableStateOf(emptyList<String>()) }
   var emojis by remember { mutableStateOf(emptyList<String>()) }
@@ -368,18 +363,16 @@ var turn by rememberSaveable { mutableStateOf(0) }
   var notes by remember { mutableStateOf("") }
   var teamMode by remember { mutableStateOf(false) }
   var teamAssign by remember { mutableStateOf(emptyList<Int>()) }
-  
   var teamNames by remember { mutableStateOf(listOf("A", "B")) }
-
+  val rounds = remember { mutableStateListOf<SnapshotStateList<String>>() }
+  val undoStack = remember { mutableStateListOf<List<List<String>>>() }
+  var turn by remember { mutableStateOf(0) }
   var big by remember { mutableStateOf(false) }
-  
   var confirm by remember { mutableStateOf<String?>(null) }
   var deleteId by remember { mutableStateOf<String?>(null) }
   var selected by remember { mutableStateOf<SavedGame?>(null) }
   var help by remember { mutableStateOf(false) }
-  val rounds = remember {mutableStateListOf<SnapshotStateList<String>>()}
 
-  val undoStack = remember {mutableStateListOf<List<List<String>>>()}
   fun pushUndo() {
     undoStack.add(rounds.map { it.toList() })
     if (undoStack.size > 40) undoStack.removeAt(0)
@@ -406,24 +399,12 @@ var turn by rememberSaveable { mutableStateOf(0) }
     if (finished || !active) return
     val sc = totals(rounds, starts)
     if (sc.any { it == null }) return
-    val g = SavedGame(
-  UUID.randomUUID().toString(),
-  name,
-  System.currentTimeMillis(),
-  players.toList(),
-  rounds.map { round ->
-    round.map { value ->
-      parseScore(value)!!
-    }
-  },
-  rule,
-  target,
-  notes,
-  starts.toList(),
-  teamMode,
-  teamAssign.toList(),
-  teamNames.toList()
-)
+    val g = SavedGame(UUID.randomUUID().toString(), name, System.currentTimeMillis(), players.toList(), rounds.map { r -> r.map { parseScore(it)!! } }, rule, target, notes, starts.toList(), teamMode, teamAssign.toList(), teamNames.toList())
+    history = listOf(g) + history
+    s.saveHistory(history)
+    finished = true
+    vibrateNow(ctx)
+    scope.launch { fanfare(sound) }
     if (tournaments.isNotEmpty() && !teamMode) {
       val vs = sc.filterNotNull()
       val best = if (rule == WinRule.MAX) vs.maxOrNull()!! else vs.minOrNull()!!
@@ -446,7 +427,7 @@ var turn by rememberSaveable { mutableStateOf(0) }
     "amoled" -> true
     else -> isSystemInDarkTheme()
   }
-  val useAmoled = theme == "amoled"
+  val useAmoled = theme == "amoled" || style == 3
   val darkAcc = listOf(Color(0xFFC6A8FF), Color(0xFF8ECDFF), Color(0xFF88E3BF))
   val lightAcc = listOf(Color(0xFF7040B0), Color(0xFF175DA6), Color(0xFF176B4C))
   val primary by animateColorAsState(
@@ -465,10 +446,8 @@ var turn by rememberSaveable { mutableStateOf(0) }
     else -> Brush.linearGradient(listOf(primary.copy(0.22f), scheme.background, scheme.secondary.copy(0.14f)))
   }
 
-  BackHandler(enabled = big || active || tab != 0) {
-  if (big) big = false
-  else if (tab != 0) tab = 0
-  else confirm = "discard"
+  BackHandler(enabled = active || tab != 0) {
+    if (tab != 0) tab = 0 else confirm = "discard"
   }
 
   CompositionLocalProvider(LocalEnglish provides english, LocalMotion provides motion) {
@@ -675,26 +654,18 @@ private fun Choice(
     )
   ) {
     Row(
-      modifier = Modifier.padding(
-        horizontal = 14.dp,
-        vertical = 8.dp
-      ),
+      modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       RadioButton(
         selected = sel,
-        onClick = onClick
+        onClick = null
       )
-
       Text(
         text = text,
         modifier = Modifier.weight(1f),
-        fontWeight = if (sel) {
-          FontWeight.SemiBold
-        } else {
-          FontWeight.Normal
-        }
+        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal
       )
     }
   }
@@ -851,585 +822,144 @@ private fun BigScreen(name: String, players: List<String>, emojis: List<String>,
 }
 
 @Composable
-private fun GamePage(
-  name: String,
-  players: List<String>,
-  emojis: List<String>,
-  starts: List<Int>,
-  rule: WinRule,
-  target: Int,
-  teamMode: Boolean,
-  teamAssign: List<Int>,
-  teamNames: List<String>,
-  rounds: SnapshotStateList<SnapshotStateList<String>>,
-  finished: Boolean,
-  turn: Int,
-  onTurn: (Int) -> Unit,
-  onBig: () -> Unit,
-  onAdd: () -> Unit,
-  onRemoveAsk: () -> Unit,
-  onUndo: () -> Unit,
-  canUndo: Boolean,
-  pushUndo: () -> Unit,
-  onFinishAsk: () -> Unit,
-  onAutoFinish: () -> Unit,
-  onResetAsk: () -> Unit
-) {
+private fun GamePage(name: String, players: List<String>, emojis: List<String>, starts: List<Int>, rule: WinRule, target: Int, teamMode: Boolean, teamAssign: List<Int>, teamNames: List<String>, rounds: SnapshotStateList<SnapshotStateList<String>>, finished: Boolean, turn: Int, onTurn: (Int) -> Unit, onBig: () -> Unit, onAdd: () -> Unit, onRemoveAsk: () -> Unit, onUndo: () -> Unit, canUndo: Boolean, pushUndo: () -> Unit, onFinishAsk: () -> Unit, onAutoFinish: () -> Unit, onResetAsk: () -> Unit) {
   val ctx = LocalContext.current
   val en = LocalEnglish.current
   val mo = LocalMotion.current
-
-  val scores = totals(rounds, starts)
-
-  val valid = rounds.isNotEmpty() &&
-    scores.all { it != null }
-
-  val best = if (!valid) {
-    null
-  } else if (rule == WinRule.MAX) {
-    scores.filterNotNull().maxOrNull()
-  } else {
-    scores.filterNotNull().minOrNull()
+  val sc = totals(rounds, starts)
+  val valid = rounds.isNotEmpty() && sc.all { it != null }
+  val best = if (!valid) null else if (rule == WinRule.MAX) sc.filterNotNull().maxOrNull() else sc.filterNotNull().minOrNull()
+  val cum = players.indices.map { c ->
+    var a = starts.getOrElse(c) { 0 }.toLong()
+    rounds.map { a += parseScore(it[c]) ?: 0; a }
   }
-
-  val cumulative = players.indices.map { playerIndex ->
-    var total = starts
-      .getOrElse(playerIndex) { 0 }
-      .toLong()
-
-    rounds.map { row ->
-      total += parseScore(row[playerIndex]) ?: 0
-      total
+  var dice by remember { mutableStateOf<Int?>(null) }
+  var coin by remember { mutableStateOf<String?>(null) }
+  var timerLen by remember { mutableStateOf(0) }
+  var left by remember { mutableStateOf(0) }
+  var running by remember { mutableStateOf(false) }
+  val headsWord = if (en) "Heads" else "Орёл"
+  val tailsWord = if (en) "Tails" else "Решка"
+  val safeTurn = if (players.isNotEmpty()) turn % players.size else 0
+  LaunchedEffect(valid, sc) {
+    if (valid && !finished && target > 0) {
+      val vs = sc.filterNotNull()
+      val hit = if (rule == WinRule.MAX) vs.any { it >= target } else vs.any { it <= target }
+      if (hit) onAutoFinish()
     }
   }
-
-  var dice by remember {
-    mutableStateOf<Int?>(null)
+  LaunchedEffect(running, left) {
+    if (running && left > 0) { delay(1000); left -= 1 }
+    else if (running && left <= 0) { running = false; if (timerLen > 0) vibrateNow(ctx) }
   }
-
-  var coin by remember {
-    mutableStateOf<String?>(null)
-  }
-
-  var timerLength by remember {
-    mutableStateOf(0)
-  }
-
-  var secondsLeft by remember {
-    mutableStateOf(0)
-  }
-
-  var timerRunning by remember {
-    mutableStateOf(false)
-  }
-
-  val headsWord = if (en) {
-    "Heads"
-  } else {
-    "Орёл"
-  }
-
-  val tailsWord = if (en) {
-    "Tails"
-  } else {
-    "Решка"
-  }
-
-  val safeTurn = if (players.isNotEmpty()) {
-    turn % players.size
-  } else {
-    0
-  }
-
-  LaunchedEffect(
-    valid,
-    scores,
-    target,
-    rule,
-    finished
-  ) {
-    if (
-      valid &&
-      !finished &&
-      target > 0
-    ) {
-      val values = scores.filterNotNull()
-
-      val targetReached = if (rule == WinRule.MAX) {
-        values.any { it >= target }
-      } else {
-        values.any { it <= target }
-      }
-
-      if (targetReached) {
-        onAutoFinish()
-      }
-    }
-  }
-
-  LaunchedEffect(
-    timerRunning,
-    secondsLeft
-  ) {
-    if (timerRunning && secondsLeft > 0) {
-      delay(1000)
-      secondsLeft -= 1
-    } else if (timerRunning && secondsLeft <= 0) {
-      timerRunning = false
-
-      if (timerLength > 0) {
-        vibrateNow(ctx)
-      }
-    }
-  }
-
-  val teamTotals = if (teamMode) {
-    listOf(
-      players.indices
-        .filter {
-          teamAssign.getOrElse(it) { 0 } == 0
-        }
-        .sumOf {
-          scores[it] ?: 0L
-        },
-
-      players.indices
-        .filter {
-          teamAssign.getOrElse(it) { 0 } == 1
-        }
-        .sumOf {
-          scores[it] ?: 0L
-        }
-    )
-  } else {
-    emptyList()
-  }
-
+  val teamTotals = if (teamMode) listOf(players.indices.filter { teamAssign.getOrElse(it) { 0 } == 0 }.sumOf { sc[it] ?: 0L }, players.indices.filter { teamAssign.getOrElse(it) { 0 } == 1 }.sumOf { sc[it] ?: 0L }) else emptyList()
   Page {
-    Heading(
-      name,
-      tr(
-        "Игроков: ${players.size} · Раундов: ${rounds.size}",
-        "Players: ${players.size} · Rounds: ${rounds.size}"
-      )
-    )
-
-    val ruleText = if (rule == WinRule.MAX) {
-      tr("Больше — лучше", "Higher wins")
-    } else {
-      tr("Меньше — лучше", "Lower wins")
-    }
-
-    val targetText = if (target > 0) {
-      tr(" · Цель: $target", " · Target: $target")
-    } else {
-      ""
-    }
-
-    Text(
-      text = ruleText + targetText,
-      color = MaterialTheme.colorScheme.primary
-    )
-
-    AnimatedVisibility(
-      visible = finished,
-      enter = fadeIn() + expandVertically()
-    ) {
+    Heading(name, tr("Игроков: ${players.size} · Раундов: ${rounds.size}", "Players: ${players.size} · Rounds: ${rounds.size}"))
+    val ruleWord = if (rule == WinRule.MAX) tr("Больше — лучше", "Higher wins") else tr("Меньше — лучше", "Lower wins")
+    val targetWord = if (target > 0) tr(" · Цель: $target", " · Target: $target") else ""
+    Text(ruleWord + targetWord, color = MaterialTheme.colorScheme.primary)
+    AnimatedVisibility(finished, enter = fadeIn() + expandVertically()) {
       GlowPanel(hi = true) {
-        Text(
-          text = tr("ИТОГИ", "RESULTS"),
-          color = MaterialTheme.colorScheme.primary,
-          letterSpacing = 2.sp
-        )
-
-        if (teamMode && valid) {
-          Text(
-            text = teamWinnerText(
-              teamNames,
-              teamTotals,
-              rule,
-              en
-            ),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-          )
-        } else {
-          Text(
-            text = winnerText(
-              players,
-              scores.filterNotNull(),
-              rule,
-              en
-            ),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-          )
-        }
+        Text(tr("ИТОГИ", "RESULTS"), color = MaterialTheme.colorScheme.primary, letterSpacing = 2.sp)
+        if (teamMode && valid) Text(teamWinnerText(teamNames, teamTotals, rule, en), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        else Text(winnerText(players, sc.filterNotNull(), rule, en), fontSize = 24.sp, fontWeight = FontWeight.Bold)
       }
     }
-
     if (teamMode && valid) {
       GlowPanel(hi = true) {
-        Text(
-          text = tr("Команды", "Teams"),
-          fontWeight = FontWeight.Bold
-        )
-
-        teamTotals.forEachIndexed { index, value ->
-          Text(
-            text = "${
-              teamNames.getOrElse(index) {
-                "T${index + 1}"
-              }
-            }: $value",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-          )
-        }
+        Text(tr("Команды", "Teams"), fontWeight = FontWeight.Bold)
+        teamTotals.forEachIndexed { i, v -> Text("${teamNames.getOrElse(i) { "T${i + 1}" }}: $v", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
       }
     }
-
     GlowPanel {
       Text(
-        text = tr(
-          "Инструменты партии",
-          "Game tools"
-        ),
-        fontSize = 17.sp,
-        fontWeight = FontWeight.Bold
-      )
-
-      Text(
-        text = tr(
-          "Ходит: ${emojis.getOrElse(safeTurn) { "" }} ${
-            players.getOrElse(safeTurn) { "" }
-          }",
-          "To move: ${emojis.getOrElse(safeTurn) { "" }} ${
-            players.getOrElse(safeTurn) { "" }
-          }"
-        )
-      )
-
-      Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-      ) {
-        OutlinedButton(
-          onClick = {
-            if (players.isNotEmpty()) {
-              onTurn((safeTurn + 1) % players.size)
-            }
-          },
-          enabled = !finished && players.isNotEmpty()
-        ) {
-          Text(
-            tr("Дальше ›", "Next ›")
-          )
-        }
-
-        OutlinedButton(
-          onClick = {
-            dice = Random.nextInt(1, 7)
-          }
-        ) {
-          Text("🎲 ${dice ?: "–"}")
-        }
-
-        OutlinedButton(
-          onClick = {
-            coin = if (Random.nextBoolean()) {
-              headsWord
-            } else {
-              tailsWord
-            }
-          }
-        ) {
-          Text("🪙 ${coin ?: "–"}")
+  tr("Инструменты партии", "Game tools"),
+  fontSize = 17.sp,
+  fontWeight = FontWeight.Bold
+)
+      Text(tr("Ходит: ${emojis.getOrElse(safeTurn) { "" }} ${players.getOrElse(safeTurn) { "" }}", "To move: ${emojis.getOrElse(safeTurn) { "" }} ${players.getOrElse(safeTurn) { "" }}"))
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { onTurn((safeTurn + 1) % players.size) }, enabled = !finished) { Text(tr("Дальше ›", "Next ›")) }
+        OutlinedButton(onClick = { dice = Random.nextInt(1, 7) }) { Text("🎲 ${dice ?: "–"}") }
+        OutlinedButton(onClick = { coin = if (Random.nextBoolean()) headsWord else tailsWord }) { Text("🪙 ${coin ?: "–"}") }
+      }
+      OutlinedButton(onClick = { onTurn(Random.nextInt(players.size)) }) { Text("🎲") }
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(0, 30, 60, 90).forEach { d ->
+          FilterChip(d == timerLen, { timerLen = d; left = d; running = false }, label = { Text(if (d == 0) tr("Выкл", "Off") else "${d}c") })
         }
       }
-
-      OutlinedButton(
-        onClick = {
-          if (players.isNotEmpty()) {
-            onTurn(Random.nextInt(players.size))
-          }
-        },
-        enabled = players.isNotEmpty()
-      ) {
-        Text(
-          tr("🎲 Первый ход", "🎲 First")
-        )
-      }
-
-      Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-      ) {
-        listOf(0, 30, 60, 90).forEach { duration ->
-          FilterChip(
-            selected = duration == timerLength,
-            onClick = {
-              timerLength = duration
-              secondsLeft = duration
-              timerRunning = false
-            },
-            label = {
-              Text(
-                if (duration == 0) {
-                  tr("Выкл", "Off")
-                } else {
-                  "$duration ${tr("с", "s")}"
-                }
-              )
-          )
-        }
-      }
-
-      if (timerLength > 0) {
-        Text(
-          text = tr(
-            "Осталось: $secondsLeft с",
-            "Left: ${secondsLeft}s"
-          ),
-          fontSize = 20.sp,
-          fontWeight = FontWeight.Bold,
-          color = if (secondsLeft == 0) {
-            MaterialTheme.colorScheme.error
-          } else {
-            MaterialTheme.colorScheme.onSurface
-          }
-        )
-
-        if (secondsLeft == 0) {
-          Text(
-            text = tr(
-              "⏰ Время вышло!",
-              "⏰ Time's up!"
-            ),
-            color = MaterialTheme.colorScheme.error,
-            fontWeight = FontWeight.Bold
-          )
-        }
-
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          Button(
-            onClick = {
-              if (secondsLeft <= 0) {
-                secondsLeft = timerLength
-              }
-
-              timerRunning = true
-            },
-            enabled = !timerRunning
-          ) {
-            Text(
-              tr("Старт", "Start")
-            )
-          }
-
-          OutlinedButton(
-            onClick = {
-              timerRunning = false
-            }
-          ) {
-            Text(
-              tr("Пауза", "Pause")
-            )
-          }
-
-          OutlinedButton(
-            onClick = {
-              timerRunning = false
-              secondsLeft = timerLength
-            }
-          ) {
-            Text(
-              tr("Сброс", "Reset")
-            )
-          }
+      if (timerLen > 0) {
+        Text(tr("Осталось: $left c", "Left: ${left}s"), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = if (left == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+        if (left == 0) Text(tr("⏰ Время вышло!", "⏰ Time's up!"), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Button(onClick = { if (left <= 0) left = timerLen; running = true }, enabled = !running) { Text(tr("Старт", "Start")) }
+          OutlinedButton(onClick = { running = false }) { Text(tr("Пауза", "Pause")) }
+          OutlinedButton(onClick = { running = false; left = timerLen }) { Text(tr("Сброс", "Reset")) }
         }
       }
     }
-
-    Row(
-      modifier = Modifier.horizontalScroll(
-        rememberScrollState()
-      ),
-      horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-      players.forEachIndexed { playerIndex, playerName ->
-        val isLeader = best != null &&
-          scores[playerIndex] == best
-
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      players.forEachIndexed { i, p ->
+        val lead = best != null && sc[i] == best
         GlowPanel(
           mod = Modifier.width(178.dp),
-          hi = isLeader
+          hi = lead
         ) {
           Text(
-            text = "${
-              emojis.getOrElse(playerIndex) { "" }
-            }  $playerName",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-          )
-
-          if (
-            playerIndex == safeTurn &&
-            !finished
-          ) {
-            Text(
-              text = tr("● ходит", "● to move"),
-              color = MaterialTheme.colorScheme.primary,
-              fontSize = 12.sp
-            )
-          }
-
-          ScoreNumber(scores[playerIndex])
-
+  text = "${emojis.getOrElse(i) { "" }}  $p",
+  fontSize = 16.sp,
+  fontWeight = FontWeight.Bold,
+  maxLines = 1
+)
+          if (i == safeTurn && !finished) Text(tr("● ходит", "● to move"), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+          ScoreNumber(sc[i])
           if (!finished && valid) {
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-              listOf(1, 5, 10, -1).forEach { difference ->
-                OutlinedButton(
-                  onClick = {
-                    pushUndo()
-
-                    val lastRound = rounds.last()
-                    val currentScore =
-                      parseScore(lastRound[playerIndex]) ?: 0
-
-                    lastRound[playerIndex] =
-                      (currentScore + difference)
-                        .coerceIn(-9999, 9999)
-                        .toString()
-                  },
-                  contentPadding = PaddingValues(0.dp),
-                  modifier = Modifier.size(48.dp)
-                ) {
-                  Text(
-                    text = if (difference > 0) {
-                      "+$difference"
-                    } else {
-                      difference.toString()
-                    },
-                    fontSize = 13.sp
-                  )
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              listOf(1, 5, 10, -1).forEach { d ->
+                OutlinedButton(onClick = { pushUndo(); val last = rounds.last(); val cur = parseScore(last[i]) ?: 0; last[i] = (cur + d).coerceIn(-9999, 9999).toString() }, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(48.dp)) { Text(if (d > 0) "+$d" else "$d", fontSize = 13.sp) }
               }
             }
           }
         }
       }
     }
-
-    ScoreChart(
-      cumulative,
-      players
-    )
-
+    ScoreChart(cum, players)
     GlowPanel {
-      Text(
-        text = tr(
-          "Очки по раундам",
-          "Round scores"
-        ),
-        fontWeight = FontWeight.Bold
-      )
-
-      Column(
-        modifier = Modifier.horizontalScroll(
-          rememberScrollState()
-        ),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-      ) {
-        Row(
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          Text(
-            text = "№",
-            modifier = Modifier.width(36.dp)
-          )
-
-          players.forEach { playerName ->
-            Text(
-              text = playerName,
-              modifier = Modifier.width(108.dp),
-              color = MaterialTheme.colorScheme.primary,
-              fontWeight = FontWeight.Bold
-            )
-          }
+      Text(tr("Очки по раундам", "Round scores"), fontWeight = FontWeight.Bold)
+      Column(Modifier.horizontalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("№", modifier = Modifier.width(36.dp))
+          players.forEach { Text(it, modifier = Modifier.width(108.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
         }
-
-        rounds.forEachIndexed { roundIndex, row ->
-          key(roundIndex) {
-            var visible by remember {
-              mutableStateOf(!mo)
-            }
-
-            LaunchedEffect(Unit) {
-              delay(16)
-              visible = true
-            }
-
-            AnimatedVisibility(
-              visible = visible || !mo,
-              enter = fadeIn() + expandVertically()
-            ) {
-              Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  text = "${roundIndex + 1}".padStart(2, '0'),
-                  modifier = Modifier.width(36.dp)
-                )
-
-                row.forEachIndexed { playerIndex, _ ->
-                  Column(
-                    modifier = Modifier.width(108.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                  ) {
-                    val currentValue = row[playerIndex]
-
+        rounds.forEachIndexed { ri, row ->
+          key(ri) {
+            var vis by remember { mutableStateOf(!mo) }
+            LaunchedEffect(Unit) { delay(16); vis = true }
+            AnimatedVisibility(vis || !mo, enter = fadeIn() + expandVertically()) {
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${ri + 1}".padStart(2, '0'), modifier = Modifier.width(36.dp))
+                row.forEachIndexed { c, _ ->
+                  Column(Modifier.width(108.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    val cur = row[c]
                     OutlinedTextField(
-  value = cur,
-  onValueChange = { newValue ->
-    if (!finished) {
-      row[c] = newValue
-    }
-  },
-  modifier = Modifier.fillMaxWidth(),
-  readOnly = finished,
-  singleLine = true,
-  isError = parseScore(cur) == null,
-  shape = RoundedCornerShape(14.dp),
-  keyboardOptions = KeyboardOptions(
-    keyboardType = KeyboardType.Number
-  )
-)
-
-                    if (!finished) {
-                      TextButton(
-                        onClick = {
-                          row[playerIndex] =
-                            if (currentValue.startsWith("-")) {
-                              currentValue.removePrefix("-")
-                            } else {
-                              "-" + currentValue.removePrefix("+")
-                            }
-                        },
-                        modifier = Modifier.heightIn(
-                          min = 48.dp
-                        )
-                      ) {
-                        Text(
-                          text = "±",
-                          fontSize = 18.sp
-                        )
-                      }
-                    }
+                      value = cur,
+                      onValueChange = { newValue ->
+                        if (!finished && cur != newValue) {
+                          pushUndo()
+                          row[c] = newValue
+                        }
+                      },
+                      modifier = Modifier.fillMaxWidth(),
+                      readOnly = finished,
+                      singleLine = true,
+                      isError = parseScore(cur) == null,
+                      shape = RoundedCornerShape(14.dp),
+                      keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                      )
+                    )
+                    if (!finished) TextButton(onClick = { row[c] = if (cur.startsWith("-")) cur.removePrefix("-") else "-" + cur.removePrefix("+") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("±", fontSize = 18.sp) }
                   }
                 }
               }
@@ -1437,211 +967,109 @@ private fun GamePage(
           }
         }
       }
-
-      if (!valid) {
-        Text(
-          text = tr(
-            "Нужны целые числа −9999..9999.",
-            "Need whole numbers −9999..9999."
-          ),
-          color = MaterialTheme.colorScheme.error
-        )
-      }
+      if (!valid) Text(tr("Нужны целые числа −9999..9999.", "Need whole numbers −9999..9999."), color = MaterialTheme.colorScheme.error)
     }
-
     if (!finished) {
-      OutlinedButton(
-        onClick = onAdd,
-        enabled = valid,
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Text(
-          tr("+ Добавить раунд", "+ Add round")
-        )
-      }
-
-      OutlinedButton(
-        onClick = onUndo,
-        enabled = canUndo,
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Text(
-          tr(
-            "Отменить последнее действие",
-            "Undo last action"
-          )
-        )
-      }
-
-      OutlinedButton(
-        onClick = onRemoveAsk,
-        enabled = rounds.size > 1,
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Text(
-          tr(
-            "Удалить последний раунд",
-            "Delete last round"
-          )
-        )
-      }
-
-      OutlinedButton(
-        onClick = onBig,
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Text(
-          tr(
-            "Большой экран",
-            "Large scoreboard"
-          )
-        )
-      }
-
-      MainButton(
-        t = tr(
-          "Завершить партию",
-          "Finish game"
-        ),
-        e = valid,
-        onClick = onFinishAsk
-      )
-
-      TextButton(
-        onClick = onResetAsk,
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Text(
-          tr(
-            "Отменить партию",
-            "Discard game"
-          )
-        )
-      }
+      OutlinedButton(onClick = onAdd, enabled = valid, modifier = Modifier.fillMaxWidth()) { Text(tr("+ Добавить раунд", "+ Add round")) }
+      OutlinedButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.fillMaxWidth()) { Text(tr("Отменить последнее действие", "Undo last action")) }
+      OutlinedButton(onClick = onRemoveAsk, enabled = rounds.size > 1, modifier = Modifier.fillMaxWidth()) { Text(tr("Удалить последний раунд", "Delete last round")) }
+      OutlinedButton(onClick = onBig, modifier = Modifier.fillMaxWidth()) { Text(tr("Большой экран", "Large scoreboard")) }
+      MainButton(tr("Завершить партию", "Finish game"), valid, onFinishAsk)
+      TextButton(onClick = onResetAsk, modifier = Modifier.fillMaxWidth()) { Text(tr("Отменить партию", "Discard game")) }
     } else {
-      MainButton(
-        t = tr(
-          "Новая партия",
-          "New game"
-        ),
-        onClick = onResetAsk
-      )
+      MainButton(tr("Новая партия", "New game"), onClick = onResetAsk)
     }
   }
 }
 
-it.first.toDouble() }
+@Composable
+private fun HistoryPage(games: List<SavedGame>, onOpen: (SavedGame) -> Unit, onDelete: (SavedGame) -> Unit, tours: List<Tournament>, onTours: (List<Tournament>) -> Unit) {
+  val en = LocalEnglish.current
+  var tName by remember { mutableStateOf("") }
+  var tPlayers by remember { mutableStateOf("") }
+  var tTarget by remember { mutableStateOf("3") }
+  val plist = tPlayers.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+  val tw = tTarget.toIntOrNull()
+  val okT = tName.trim().length in 1..40 && plist.size in 2..8 && tw in 1..20
+  Page {
+    Heading(tr("История", "History"), tr("Партии и турниры", "Games and tournaments"))
+    if (games.isEmpty()) {
+      GlowPanel { Text(tr("Здесь появятся ваши игры", "Your games will appear here"), fontSize = 22.sp, fontWeight = FontWeight.Bold); Text(tr("Завершите первую партию.", "Finish your first game.")) }
+    }
+    games.forEach { g ->
+      key(g.id) {
+        GlowPanel {
+          Text(dateText(g.date), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text(g.name, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+          Text(winnerText(g.players, savedTotals(g), g.rule, en), color = MaterialTheme.colorScheme.primary)
+          Text(tr("Игроков: ${g.players.size} · Раундов: ${g.rounds.size}", "Players: ${g.players.size} · Rounds: ${g.rounds.size}"))
+          if (g.notes.isNotEmpty()) Text("📝 ${g.notes}", fontSize = 13.sp)
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { onOpen(g) }) { Text(tr("Подробнее", "Details")) }
+            TextButton(onClick = { onDelete(g) }) { Text(tr("Удалить", "Delete"), color = MaterialTheme.colorScheme.error) }
+          }
+        }
+      }
+    }
+    GlowPanel(hi = true) {
+      Text(tr("Турнир до N побед", "Tournament to N wins"), fontWeight = FontWeight.Bold)
+      OutlinedTextField(tName, { tName = it }, Modifier.fillMaxWidth(), label = { Text(tr("Название турнира", "Tournament name")) }, singleLine = true, shape = RoundedCornerShape(14.dp))
+      OutlinedTextField(tPlayers, { tPlayers = it }, Modifier.fillMaxWidth(), label = { Text(tr("Игроки через запятую", "Players, comma separated")) }, singleLine = true, shape = RoundedCornerShape(14.dp))
+      OutlinedTextField(tTarget, { tTarget = it }, Modifier.fillMaxWidth(), label = { Text(tr("Побед для титула", "Wins for title")) }, singleLine = true, shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+      MainButton(tr("Создать турнир", "Create tournament"), okT) {
+        onTours(listOf(Tournament(UUID.randomUUID().toString(), tName.trim(), System.currentTimeMillis(), plist.take(8), tw ?: 3, List(plist.take(8).size) { 0 })) + tours)
+        tName = ""; tPlayers = ""
+      }
+      tours.forEach { t ->
+        key(t.id) {
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(t.name, fontWeight = FontWeight.Bold)
+            Text(tr("Цель: ${t.targetWins} победы", "Target: ${t.targetWins} wins"), fontSize = 12.sp)
+            t.players.forEachIndexed { i, p ->
+              Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("$p — ${t.wins.getOrElse(i) { 0 }}" + (if (t.wins.getOrElse(i) { 0 } >= t.targetWins) " 🏆" else ""))
+                Row {
+                  TextButton(onClick = { val nw = t.wins.toMutableList(); nw[i]++; onTours(tours.map { if (it.id == t.id) it.copy(wins = nw) else it }) }) { Text("+1") }
+                  TextButton(onClick = { val nw = t.wins.toMutableList(); if (nw[i] > 0) nw[i]--; onTours(tours.map { if (it.id == t.id) it.copy(wins = nw) else it }) }) { Text("-1") }
+                }
+              }
+            }
+            TextButton(onClick = { onTours(tours.filterNot { it.id == t.id }) }) { Text(tr("Удалить турнир", "Delete tournament"), color = MaterialTheme.colorScheme.error) }
+          }
+        }
+      }
+    }
+  }
+}
+
 @Composable
 private fun StatsPage(games: List<SavedGame>) {
   Page {
-    Heading(
-      tr("Статистика", "Stats"),
-      tr("Кто чаще побеждает", "Who wins most")
-    )
-
+    Heading(tr("Статистика", "Stats"), tr("Кто чаще побеждает", "Who wins most"))
     if (games.isEmpty()) {
-      GlowPanel {
-        Text(
-          text = tr("Нет данных", "No data"),
-          fontWeight = FontWeight.Bold
-        )
-      }
-
+      GlowPanel { Text(tr("Нет данных", "No data"), fontWeight = FontWeight.Bold) }
       return@Page
     }
-
-    val names = games
-      .flatMap { game -> game.players }
-      .distinct()
-      .sorted()
-
-    names.forEach { playerName ->
-      val played = games.count { game ->
-        game.players.any { name ->
-          name.equals(playerName, ignoreCase = true)
+    val names = games.flatMap { it.players }.distinct().sorted()
+    names.forEach { n ->
+      val played = games.count { g -> g.players.any { it.equals(n, true) } }
+      val res = games.mapNotNull { g ->
+        val idx = g.players.indexOfFirst { it.equals(n, true) }
+        if (idx < 0) null else {
+          val tt = savedTotals(g)
+          val best = if (g.rule == WinRule.MAX) tt.maxOrNull()!! else tt.minOrNull()!!
+          Triple(tt[idx], tt[idx] == best, tt.count { it == best } > 1)
         }
       }
-
-      val results = games.mapNotNull { game ->
-        val playerIndex = game.players.indexOfFirst { name ->
-          name.equals(playerName, ignoreCase = true)
-        }
-
-        if (playerIndex < 0) {
-          null
-        } else {
-          val scores = savedTotals(game)
-
-          val bestScore = if (game.rule == WinRule.MAX) {
-            scores.maxOrNull()
-          } else {
-            scores.minOrNull()
-          }
-
-          if (bestScore == null) {
-            null
-          } else {
-            val playerScore = scores[playerIndex]
-            val isBest = playerScore == bestScore
-            val isTie = scores.count { score ->
-              score == bestScore
-            } > 1
-
-            Triple(
-              playerScore,
-              isBest,
-              isTie
-            )
-          }
-        }
-      }
-
-      val wins = results.count { result ->
-        result.second && !result.third
-      }
-
-      val ties = results.count { result ->
-        result.second && result.third
-      }
-
-      val average = if (results.isEmpty()) {
-        0.0
-      } else {
-        results
-          .map { result -> result.first.toDouble() }
-          .average()
-      }
-
-      val winRate = if (played > 0) {
-        "${wins * 100 / played}%"
-      } else {
-        "—"
-      }
-
+      val wins = res.count { it.second && !it.third }
+      val ties = res.count { it.third }
+      val avg = if (res.isEmpty()) 0.0 else res.map { it.first.toDouble() }.average()
+      val bestScore = res.map { it.first }.maxOrNull() ?: 0L
+      val rate = if (played > 0) "${wins * 100 / played}%" else "—"
       GlowPanel {
-        Text(
-          text = playerName,
-          fontSize = 20.sp,
-          fontWeight = FontWeight.Bold
-        )
-
-        Text(
-          text = tr(
-            "Игр: $played · Побед: $wins · Ничьих: $ties",
-            "Games: $played · Wins: $wins · Ties: $ties"
-          )
-        )
-
-        Text(
-          text = tr(
-            "Винрейт: $winRate · Средний итог: ${
-              "%.1f".format(average)
-            }",
-            "Winrate: $winRate · Avg: ${
-              "%.1f".format(average)
-            }"
-          )
-        )
+        Text(n, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(tr("Игр: $played · Побед: $wins · Ничьих: $ties", "Games: $played · Wins: $wins · Ties: $ties"))
+        Text(tr("Винрейт: $rate · Средний итог: ${"%.1f".format(avg)} · Лучший: $bestScore", "Winrate: $rate · Avg: ${"%.1f".format(avg)} · Best: $bestScore"))
       }
     }
   }
