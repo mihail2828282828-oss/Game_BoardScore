@@ -1,5 +1,6 @@
 package com.example.boardgamescore
 
+import androidx.compose.ui.focus.onFocusChanged
 import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -376,13 +377,9 @@ var turn by rememberSaveable { mutableStateOf(0) }
   var deleteId by remember { mutableStateOf<String?>(null) }
   var selected by remember { mutableStateOf<SavedGame?>(null) }
   var help by remember { mutableStateOf(false) }
-val rounds = remember {
-  mutableStateListOf<SnapshotStateList<String>>()
-}
+  val rounds = remember {mutableStateListOf<SnapshotStateList<String>>()}
 
-  val undoStack = remember {
-  mutableStateListOf<List<List<String>>>()
-  }
+  val undoStack = remember {mutableStateListOf<List<List<String>>>()}
   fun pushUndo() {
     undoStack.add(rounds.map { it.toList() })
     if (undoStack.size > 40) undoStack.removeAt(0)
