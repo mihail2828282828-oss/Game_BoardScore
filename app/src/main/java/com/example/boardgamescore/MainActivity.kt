@@ -371,18 +371,18 @@ var turn by rememberSaveable { mutableStateOf(0) }
   var teamNames by remember { mutableStateOf(listOf("A", "B")) }
 
   var big by remember { mutableStateOf(false) }
-  val rounds = remember {
+  
+  var confirm by remember { mutableStateOf<String?>(null) }
+  var deleteId by remember { mutableStateOf<String?>(null) }
+  var selected by remember { mutableStateOf<SavedGame?>(null) }
+  var help by remember { mutableStateOf(false) }
+val rounds = remember {
   mutableStateListOf<SnapshotStateList<String>>()
 }
 
   val undoStack = remember {
   mutableStateListOf<List<List<String>>>()
   }
-  var confirm by remember { mutableStateOf<String?>(null) }
-  var deleteId by remember { mutableStateOf<String?>(null) }
-  var selected by remember { mutableStateOf<SavedGame?>(null) }
-  var help by remember { mutableStateOf(false) }
-
   fun pushUndo() {
     undoStack.add(rounds.map { it.toList() })
     if (undoStack.size > 40) undoStack.removeAt(0)
