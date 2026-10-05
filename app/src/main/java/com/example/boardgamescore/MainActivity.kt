@@ -265,6 +265,22 @@ private fun parseScore(t: String): Int? {
   return t.trim().toIntOrNull()?.takeIf { it in -9999..9999 }
 }
 
+private fun gameNameForTemplate(
+    templateIndex: Int,
+    customName: String,
+    english: Boolean
+): String {
+    return if (templateIndex == 0) {
+        customName.trim()
+    } else {
+        if (english) {
+            Templates[templateIndex].en
+        } else {
+            Templates[templateIndex].ru
+        }
+    }
+}
+
 private fun newRound(n: Int): SnapshotStateList<String> {
   return mutableStateListOf<String>().apply { repeat(n) { add("0") } }
 }
@@ -329,221 +345,1001 @@ private suspend fun fanfare(on: Boolean) {
 
 @Composable
 private fun ScoreApp(s: Storage) {
-  val ctx = LocalContext.current
-  val scope = rememberCoroutineScope()
-  var theme by remember { mutableStateOf(s.theme) }
-  var accent by remember { mutableStateOf(s.accent) }
-  var style by remember { mutableStateOf(s.style) }
-  var motion by remember { mutableStateOf(s.animations) }
-  var english by remember { mutableStateOf(s.english) }
-  var sound by remember { mutableStateOf(s.sound) }
-  var history by remember { mutableStateOf(s.loadHistory()) }
-  var tournaments by remember { mutableStateOf(s.loadTournaments()) }
-  var tab by remember { mutableStateOf(0) }
-  var draftTpl by remember { mutableStateOf(0) }
-  var draftName by remember { mutableStateOf("") }
-  val draftPlayers = remember { mutableStateListOf("", "") }
-  val draftStarts = remember { mutableStateListOf("0", "0") }
-  val draftEmojis = remember { mutableStateListOf("🦊", "🐼") }
-  var draftRule by remember { mutableStateOf(WinRule.MAX) }
-  var draftTarget by remember { mutableStateOf("0") }
-  var draftTeamMode by remember { mutableStateOf(false) }
-  val draftTeams = remember { mutableStateListOf(0, 0) }
-  var draftTeamA by remember { mutableStateOf("Команда А") }
-  var draftTeamB by remember { mutableStateOf("Команда Б") }
-  var draftNotes by remember { mutableStateOf("") }
-  var active by remember { mutableStateOf(false) }
-  var finished by remember { mutableStateOf(false) }
-  var name by remember { mutableStateOf("") }
-  var players by remember { mutableStateOf(emptyList<String>()) }
-  var emojis by remember { mutableStateOf(emptyList<String>()) }
-  var starts by remember { mutableStateOf(emptyList<Int>()) }
-  var rule by remember { mutableStateOf(WinRule.MAX) }
-  var target by remember { mutableStateOf(0) }
-  var notes by remember { mutableStateOf("") }
-  var teamMode by remember { mutableStateOf(false) }
-  var teamAssign by remember { mutableStateOf(emptyList<Int>()) }
-  var teamNames by remember { mutableStateOf(listOf("A", "B")) }
-  val rounds = remember { mutableStateListOf<SnapshotStateList<String>>() }
-  val undoStack = remember { mutableStateListOf<List<List<String>>>() }
-  var turn by remember { mutableStateOf(0) }
-  var big by remember { mutableStateOf(false) }
-  var confirm by remember { mutableStateOf<String?>(null) }
-  var deleteId by remember { mutableStateOf<String?>(null) }
-  var selected by remember { mutableStateOf<SavedGame?>(null) }
-  var help by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-  fun pushUndo() {
-    undoStack.add(rounds.map { it.toList() })
-    if (undoStack.size > 40) undoStack.removeAt(0)
-  }
-
-  fun restoreUndo() {
-    if (undoStack.isEmpty()) return
-    val last = undoStack.removeAt(undoStack.lastIndex)
-    rounds.clear()
-    last.forEach { r -> rounds.add(mutableStateListOf<String>().apply { addAll(r) }) }
-  }
-
-  fun resetGame() {
-    active = false; finished = false; players = emptyList(); rounds.clear()
-    undoStack.clear(); turn = 0; big = false
-    draftName = ""; draftPlayers.clear(); draftPlayers.addAll(listOf("", ""))
-    draftStarts.clear(); draftStarts.addAll(listOf("0", "0"))
-    draftEmojis.clear(); draftEmojis.addAll(listOf("🦊", "🐼"))
-    draftTeams.clear(); draftTeams.addAll(listOf(0, 0))
-    draftRule = WinRule.MAX; draftTarget = "0"; draftTeamMode = false; draftNotes = ""
-  }
-
-  fun doFinish() {
-    if (finished || !active) return
-    val sc = totals(rounds, starts)
-    if (sc.any { it == null }) return
-    val g = SavedGame(UUID.randomUUID().toString(), name, System.currentTimeMillis(), players.toList(), rounds.map { r -> r.map { parseScore(it)!! } }, rule, target, notes, starts.toList(), teamMode, teamAssign.toList(), teamNames.toList())
-    history = listOf(g) + history
-    s.saveHistory(history)
-    finished = true
-    vibrateNow(ctx)
-    scope.launch { fanfare(sound) }
-    if (tournaments.isNotEmpty() && !teamMode) {
-      val vs = sc.filterNotNull()
-      val best = if (rule == WinRule.MAX) vs.maxOrNull()!! else vs.minOrNull()!!
-      val wi = players.indices.filter { vs[it] == best }
-      tournaments = tournaments.map { t ->
-        val same = t.players.size == players.size && t.players.zip(players).all { (a, b) -> a.equals(b, true) }
-        if (same) {
-          val nw = t.wins.toMutableList()
-          wi.forEach { if (it < nw.size) nw[it]++ }
-          t.copy(wins = nw)
-        } else t
-      }
-      s.saveTournaments(tournaments)
+    var theme by remember {
+        mutableStateOf(s.theme)
     }
-  }
 
-  val useDark = when (theme) {
-    "light" -> false
-    "dark" -> true
-    "amoled" -> true
-    else -> isSystemInDarkTheme()
-  }
-  val useAmoled = theme == "amoled" || style == 3
-  val darkAcc = listOf(Color(0xFFC6A8FF), Color(0xFF8ECDFF), Color(0xFF88E3BF))
-  val lightAcc = listOf(Color(0xFF7040B0), Color(0xFF175DA6), Color(0xFF176B4C))
-  val primary by animateColorAsState(
-    targetValue = if (useDark) darkAcc[accent] else lightAcc[accent],
-    animationSpec = tween(if (motion) 350 else 0),
-    label = "ac"
-  )
-  val scheme = if (useDark) {
-    darkColorScheme(primary = primary, onPrimary = Color(0xFF171021), secondary = Color(0xFF7ADBCB), background = if (useAmoled) Color.Black else Color(0xFF101019), surface = if (useAmoled) Color(0xFF0D0D12) else Color(0xFF1B1B29), surfaceVariant = Color(0xFF292A3A), onBackground = Color(0xFFF5F1FF), onSurface = Color(0xFFF5F1FF))
-  } else {
-    lightColorScheme(primary = primary, onPrimary = Color.White, secondary = Color(0xFF167D80), background = Color(0xFFF5F3FC), surface = Color.White, surfaceVariant = Color(0xFFEAE6F2), onBackground = Color(0xFF231D30), onSurface = Color(0xFF231D30))
-  }
-  val bg = when (style) {
-    1 -> Brush.linearGradient(listOf(primary.copy(0.30f), scheme.background, Color(0xFFFF9E7A).copy(0.18f)))
-    2 -> Brush.linearGradient(listOf(Color(0xFF4ADE80).copy(0.22f), scheme.background, primary.copy(0.16f)))
-    else -> Brush.linearGradient(listOf(primary.copy(0.22f), scheme.background, scheme.secondary.copy(0.14f)))
-  }
+    var accent by remember {
+        mutableStateOf(s.accent)
+    }
 
-  BackHandler(enabled = active || tab != 0) {
-    if (tab != 0) tab = 0 else confirm = "discard"
-  }
+    var style by remember {
+        mutableStateOf(s.style)
+    }
 
-  CompositionLocalProvider(LocalEnglish provides english, LocalMotion provides motion) {
-    MaterialTheme(colorScheme = scheme) {
-      Scaffold(
-        containerColor = scheme.background,
-        topBar = {
-          Surface(color = scheme.background.copy(0.95f)) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-              Text("SCORE CLUB", color = scheme.primary, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, fontSize = 14.sp)
-              TextButton(onClick = { help = true }) { Text(tr("?  Помощь", "?  Help")) }
+    var motion by remember {
+        mutableStateOf(s.animations)
+    }
+
+    var english by remember {
+        mutableStateOf(s.english)
+    }
+
+    var sound by remember {
+        mutableStateOf(s.sound)
+    }
+
+    var history by remember {
+        mutableStateOf(s.loadHistory())
+    }
+
+    var tournaments by remember {
+        mutableStateOf(s.loadTournaments())
+    }
+
+    var tab by remember {
+        mutableStateOf(0)
+    }
+
+    /*
+     * Настройки новой партии
+     */
+    var draftTpl by remember {
+        mutableStateOf(0)
+    }
+
+    var draftName by remember {
+        mutableStateOf("")
+    }
+
+    val draftPlayers = remember {
+        mutableStateListOf("", "")
+    }
+
+    val draftStarts = remember {
+        mutableStateListOf("0", "0")
+    }
+
+    val draftEmojis = remember {
+        mutableStateListOf("🦊", "🐼")
+    }
+
+    var draftRule by remember {
+        mutableStateOf(WinRule.MAX)
+    }
+
+    var draftTarget by remember {
+        mutableStateOf("0")
+    }
+
+    var draftTeamMode by remember {
+        mutableStateOf(false)
+    }
+
+    val draftTeams = remember {
+        mutableStateListOf(0, 0)
+    }
+
+    var draftTeamA by remember {
+        mutableStateOf("Команда А")
+    }
+
+    var draftTeamB by remember {
+        mutableStateOf("Команда Б")
+    }
+
+    var draftNotes by remember {
+        mutableStateOf("")
+    }
+
+    /*
+     * Текущая партия
+     */
+    var active by remember {
+        mutableStateOf(false)
+    }
+
+    var finished by remember {
+        mutableStateOf(false)
+    }
+
+    var name by remember {
+        mutableStateOf("")
+    }
+
+    var players by remember {
+        mutableStateOf(emptyList<String>())
+    }
+
+    var emojis by remember {
+        mutableStateOf(emptyList<String>())
+    }
+
+    var starts by remember {
+        mutableStateOf(emptyList<Int>())
+    }
+
+    var rule by remember {
+        mutableStateOf(WinRule.MAX)
+    }
+
+    var target by remember {
+        mutableStateOf(0)
+    }
+
+    var notes by remember {
+        mutableStateOf("")
+    }
+
+    var teamMode by remember {
+        mutableStateOf(false)
+    }
+
+    var teamAssign by remember {
+        mutableStateOf(emptyList<Int>())
+    }
+
+    var teamNames by remember {
+        mutableStateOf(listOf("A", "B"))
+    }
+
+    val rounds = remember {
+        mutableStateListOf<SnapshotStateList<String>>()
+    }
+
+    val undoStack = remember {
+        mutableStateListOf<List<List<String>>>()
+    }
+
+    var turn by remember {
+        mutableStateOf(0)
+    }
+
+    var big by remember {
+        mutableStateOf(false)
+    }
+
+    /*
+     * Диалоги и выбранные элементы
+     */
+    var confirm by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var deleteId by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var selected by remember {
+        mutableStateOf<SavedGame?>(null)
+    }
+
+    var help by remember {
+        mutableStateOf(false)
+    }
+
+    fun pushUndo() {
+        undoStack.add(
+            rounds.map { round ->
+                round.toList()
             }
-          }
-        },
-        bottomBar = {
-          NavigationBar(containerColor = scheme.surface, tonalElevation = 0.dp) {
-            val titles = listOf(tr("Игра", "Game"), tr("История", "History"), tr("Статы", "Stats"), tr("Настройки", "Settings"))
-            val icons = listOf("▶", "≡", "★", "⚙")
-            titles.forEachIndexed { i, t ->
-              NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(icons[i], fontSize = 20.sp) }, label = { Text(t) })
-            }
-          }
-        }
-      ) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad).imePadding().background(bg)) {
-          AnimatedContent(targetState = tab, transitionSpec = { fadeIn(tween(if (motion) 220 else 0)) togetherWith fadeOut(tween(if (motion) 120 else 0)) }, label = "tabs") { c ->
-            when (c) {
-              0 -> {
-                if (!active) {
-                  SetupPage(draftTpl, { draftTpl = it; draftRule = Templates[it].rule; draftTarget = Templates[it].target.toString() }, draftName, { draftName = it }, draftPlayers, draftStarts, draftEmojis, draftTeams, draftRule, { draftRule = it }, draftTarget, { draftTarget = it }, draftTeamMode, { draftTeamMode = it }, draftTeamA, { draftTeamA = it }, draftTeamB, { draftTeamB = it }, draftNotes, { draftNotes = it }) {
-                    name = draftName.trim()
-                    players = draftPlayers.map { it.trim() }
-                    starts = draftStarts.map { it.trim().toIntOrNull()?.coerceIn(-9999, 9999) ?: 0 }
-                    emojis = draftEmojis.toList()
-                    rule = draftRule
-                    target = draftTarget.trim().toIntOrNull()?.coerceIn(0, 9999) ?: 0
-                    notes = draftNotes.trim()
-                    teamMode = draftTeamMode
-                    teamAssign = draftTeams.toList()
-                    teamNames = listOf(draftTeamA.trim().ifEmpty { "A" }, draftTeamB.trim().ifEmpty { "B" })
-                    rounds.clear()
-                    rounds.add(newRound(players.size))
-                    undoStack.clear(); finished = false; active = true; turn = 0; big = false
-                  }
-                } else {
-                  if (big) {
-                    BigScreen(name, players, emojis, totals(rounds, starts), finished, rule, teamMode, teamAssign, teamNames, { big = false }, { confirm = "finish" }, { resetGame() })
-                  } else {
-                    GamePage(name, players, emojis, starts, rule, target, teamMode, teamAssign, teamNames, rounds, finished, turn, { turn = it }, { big = true }, { pushUndo(); rounds.add(newRound(players.size)) }, { confirm = "round" }, { restoreUndo() }, undoStack.isNotEmpty(), { pushUndo() }, { confirm = "finish" }, { doFinish() }, { if (finished) resetGame() else confirm = "discard" })
-                  }
-                }
-              }
-              1 -> {
-                HistoryPage(history, { selected = it }, { deleteId = it.id; confirm = "delete" }, tournaments, { tournaments = it; s.saveTournaments(it) })
-              }
-              2 -> StatsPage(history)
-              else -> {
-                SettingsPage(theme, { theme = it; s.theme = it }, accent, { accent = it; s.accent = it }, style, { style = it; s.style = it }, english, { english = it; s.english = it }, motion, { motion = it; s.animations = it }, sound, { sound = it; s.sound = it }, history.size, { confirm = "clear" }, tournaments.size)
-              }
-            }
-          }
-        }
-      }
-      if (help) HelpDialog { help = false }
-      selected?.let { HistoryDetails(it) { selected = null } }
-      confirm?.let { a ->
-        val title = when (a) {
-          "round" -> tr("Удалить последний раунд?", "Delete last round?")
-          "clear" -> tr("Очистить историю?", "Clear history?")
-          "delete" -> tr("Удалить запись?", "Delete entry?")
-          "discard" -> tr("Закрыть партию?", "Close game?")
-          else -> tr("Завершить партию?", "Finish game?")
-        }
-        val msg = if (a == "discard" && !finished) tr("Незавершённая партия будет удалена.", "Unfinished game will be discarded.") else tr("Это действие нельзя отменить.", "This cannot be undone.")
-        AlertDialog(
-          onDismissRequest = { confirm = null },
-          title = { Text(title) },
-          text = { Text(msg) },
-          confirmButton = {
-            TextButton(onClick = {
-              when (a) {
-                "finish" -> doFinish()
-                "discard" -> resetGame()
-                "round" -> if (rounds.size > 1) { pushUndo(); rounds.removeAt(rounds.lastIndex) }
-                "clear" -> { history = emptyList(); s.saveHistory(history) }
-                "delete" -> { history = history.filterNot { it.id == deleteId }; s.saveHistory(history) }
-              }
-              confirm = null
-            }) { Text(tr("Подтвердить", "Confirm")) }
-          },
-          dismissButton = { TextButton(onClick = { confirm = null }) { Text(tr("Отмена", "Cancel")) } }
         )
-      }
+
+        if (undoStack.size > 40) {
+            undoStack.removeAt(0)
+        }
     }
-  }
+
+    fun restoreUndo() {
+        if (undoStack.isEmpty()) {
+            return
+        }
+
+        val previous = undoStack.removeAt(
+            undoStack.lastIndex
+        )
+
+        rounds.clear()
+
+        previous.forEach { round ->
+            rounds.add(
+                mutableStateListOf<String>().apply {
+                    addAll(round)
+                }
+            )
+        }
+    }
+
+    fun resetGame() {
+        active = false
+        finished = false
+
+        name = ""
+        players = emptyList()
+        emojis = emptyList()
+        starts = emptyList()
+        notes = ""
+
+        rule = WinRule.MAX
+        target = 0
+        teamMode = false
+        teamAssign = emptyList()
+        teamNames = listOf("A", "B")
+
+        rounds.clear()
+        undoStack.clear()
+
+        turn = 0
+        big = false
+
+        /*
+         * Сброс настроек новой партии
+         */
+        draftTpl = 0
+
+        draftName = ""
+
+        draftPlayers.clear()
+        draftPlayers.addAll(
+            listOf("", "")
+        )
+
+        draftStarts.clear()
+        draftStarts.addAll(
+            listOf("0", "0")
+        )
+
+        draftEmojis.clear()
+        draftEmojis.addAll(
+            listOf("🦊", "🐼")
+        )
+
+        draftRule = WinRule.MAX
+        draftTarget = "0"
+        draftTeamMode = false
+
+        draftTeams.clear()
+        draftTeams.addAll(
+            listOf(0, 0)
+        )
+
+        draftTeamA = if (english) {
+            "Team A"
+        } else {
+            "Команда А"
+        }
+
+        draftTeamB = if (english) {
+            "Team B"
+        } else {
+            "Команда Б"
+        }
+
+        draftNotes = ""
+    }
+
+    fun selectedGameName(): String {
+        return if (draftTpl == 0) {
+            draftName.trim()
+        } else {
+            if (english) {
+                Templates[draftTpl].en
+            } else {
+                Templates[draftTpl].ru
+            }
+        }
+    }
+
+    fun doFinish() {
+        if (!active || finished) {
+            return
+        }
+
+        val scores = totals(
+            rounds = rounds,
+            starts = starts
+        )
+
+        if (scores.any { it == null }) {
+            return
+        }
+
+        val savedRounds = rounds.map { round ->
+            round.map {
+                parseScore(it)!!
+            }
+        }
+
+        val game = SavedGame(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            date = System.currentTimeMillis(),
+            players = players.toList(),
+            rounds = savedRounds,
+            rule = rule,
+            target = target,
+            notes = notes,
+            starts = starts.toList(),
+            teamMode = teamMode,
+            teamAssign = teamAssign.toList(),
+            teamNames = teamNames.toList()
+        )
+
+        history = listOf(game) + history
+        s.saveHistory(history)
+
+        finished = true
+
+        if (sound) {
+            vibrateNow(ctx)
+            scope.launch {
+                fanfare(true)
+            }
+        }
+
+        /*
+         * Обновление турниров.
+         * Для командных игр обновление турнира не выполняется.
+         */
+        if (tournaments.isNotEmpty() && !teamMode) {
+            val finalScores = scores.filterNotNull()
+
+            val bestScore = if (rule == WinRule.MAX) {
+                finalScores.maxOrNull()!!
+            } else {
+                finalScores.minOrNull()!!
+            }
+
+            val winnerIndexes = players.indices.filter { index ->
+                finalScores[index] == bestScore
+            }
+
+            tournaments = tournaments.map { tournament ->
+                val samePlayers =
+                    tournament.players.size == players.size &&
+                        tournament.players.zip(players).all { (a, b) ->
+                            a.equals(b, ignoreCase = true)
+                        }
+
+                if (!samePlayers) {
+                    tournament
+                } else {
+                    val updatedWins = tournament.wins.toMutableList()
+
+                    winnerIndexes.forEach { index ->
+                        if (index < updatedWins.size) {
+                            updatedWins[index]++
+                        }
+                    }
+
+                    tournament.copy(
+                        wins = updatedWins
+                    )
+                }
+            }
+
+            s.saveTournaments(tournaments)
+        }
+    }
+
+    val useDark = when (theme) {
+        "light" -> false
+        "dark" -> true
+        "amoled" -> true
+        else -> isSystemInDarkTheme()
+    }
+
+    val useAmoled =
+        theme == "amoled" || style == 3
+
+    val darkAccents = listOf(
+        Color(0xFFC6A8FF),
+        Color(0xFF8ECDFF),
+        Color(0xFF88E3BF)
+    )
+
+    val lightAccents = listOf(
+        Color(0xFF7040B0),
+        Color(0xFF175DA6),
+        Color(0xFF176B4C)
+    )
+
+    val primary by animateColorAsState(
+        targetValue = if (useDark) {
+            darkAccents[accent.coerceIn(0, 2)]
+        } else {
+            lightAccents[accent.coerceIn(0, 2)]
+        },
+        animationSpec = tween(
+            durationMillis = if (motion) 350 else 0
+        ),
+        label = "primary_color"
+    )
+
+    val scheme = if (useDark) {
+        darkColorScheme(
+            primary = primary,
+            onPrimary = Color(0xFF171021),
+            secondary = Color(0xFF7ADBCB),
+            background = if (useAmoled) {
+                Color.Black
+            } else {
+                Color(0xFF101019)
+            },
+            surface = if (useAmoled) {
+                Color(0xFF0D0D12)
+            } else {
+                Color(0xFF1B1B29)
+            },
+            surfaceVariant = Color(0xFF292A3A),
+            onBackground = Color(0xFFF5F1FF),
+            onSurface = Color(0xFFF5F1FF)
+        )
+    } else {
+        lightColorScheme(
+            primary = primary,
+            onPrimary = Color.White,
+            secondary = Color(0xFF167D80),
+            background = Color(0xFFF5F3FC),
+            surface = Color.White,
+            surfaceVariant = Color(0xFFEAE6F2),
+            onBackground = Color(0xFF231D30),
+            onSurface = Color(0xFF231D30)
+        )
+    }
+
+    val backgroundBrush = when (style) {
+        1 -> {
+            Brush.linearGradient(
+                listOf(
+                    primary.copy(alpha = 0.30f),
+                    scheme.background,
+                    Color(0xFFFF9E7A).copy(alpha = 0.18f)
+                )
+            )
+        }
+
+        2 -> {
+            Brush.linearGradient(
+                listOf(
+                    Color(0xFF4ADE80).copy(alpha = 0.22f),
+                    scheme.background,
+                    primary.copy(alpha = 0.16f)
+                )
+            )
+        }
+
+        else -> {
+            Brush.linearGradient(
+                listOf(
+                    primary.copy(alpha = 0.22f),
+                    scheme.background,
+                    scheme.secondary.copy(alpha = 0.14f)
+                )
+            )
+        }
+    }
+
+    BackHandler(
+        enabled = active || tab != 0
+    ) {
+        if (tab != 0) {
+            tab = 0
+        } else {
+            confirm = "discard"
+        }
+    }
+
+    CompositionLocalProvider(
+        LocalEnglish provides english,
+        LocalMotion provides motion
+    ) {
+        MaterialTheme(
+            colorScheme = scheme
+        ) {
+            Scaffold(
+                containerColor = scheme.background,
+
+                topBar = {
+                    Surface(
+                        color = scheme.background.copy(alpha = 0.95f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(
+                                    horizontal = 20.dp,
+                                    vertical = 4.dp
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "SCORE CLUB",
+                                color = scheme.primary,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 2.sp,
+                                fontSize = 14.sp
+                            )
+
+                            TextButton(
+                                onClick = {
+                                    help = true
+                                }
+                            ) {
+                                Text(
+                                    tr(
+                                        "?  Помощь",
+                                        "?  Help"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                },
+
+                bottomBar = {
+                    NavigationBar(
+                        containerColor = scheme.surface,
+                        tonalElevation = 0.dp
+                    ) {
+                        val titles = listOf(
+                            tr("Игра", "Game"),
+                            tr("История", "History"),
+                            tr("Статы", "Stats"),
+                            tr("Настройки", "Settings")
+                        )
+
+                        val icons = listOf(
+                            "▶",
+                            "≡",
+                            "★",
+                            "⚙"
+                        )
+
+                        titles.forEachIndexed { index, title ->
+                            NavigationBarItem(
+                                selected = tab == index,
+                                onClick = {
+                                    tab = index
+                                },
+                                icon = {
+                                    Text(
+                                        text = icons[index],
+                                        fontSize = 20.sp
+                                    )
+                                },
+                                label = {
+                                    Text(title)
+                                }
+                            )
+                        }
+                    }
+                }
+            ) { paddingValues ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .imePadding()
+                        .background(backgroundBrush)
+                ) {
+                    AnimatedContent(
+                        targetState = tab,
+                        transitionSpec = {
+                            fadeIn(
+                                tween(
+                                    if (motion) 220 else 0
+                                )
+                            ) togetherWith fadeOut(
+                                tween(
+                                    if (motion) 120 else 0
+                                )
+                            )
+                        },
+                        label = "tabs"
+                    ) { currentTab ->
+                        when (currentTab) {
+                            0 -> {
+                                if (!active) {
+                                    SetupPage(
+                                        tpl = draftTpl,
+                                        onTpl = { templateIndex ->
+                                            draftTpl = templateIndex
+                                            draftRule =
+                                                Templates[templateIndex].rule
+                                            draftTarget =
+                                                Templates[templateIndex].target.toString()
+
+                                            /*
+                                             * Для шаблонов очищаем введённое
+                                             * пользовательское название.
+                                             */
+                                            if (templateIndex != 0) {
+                                                draftName = ""
+                                            }
+                                        },
+                                        name = draftName,
+                                        onName = {
+                                            draftName = it
+                                        },
+                                        names = draftPlayers,
+                                        starts = draftStarts,
+                                        emojis = draftEmojis,
+                                        teams = draftTeams,
+                                        rule = draftRule,
+                                        onRule = {
+                                            draftRule = it
+                                        },
+                                        target = draftTarget,
+                                        onTarget = {
+                                            draftTarget = it
+                                        },
+                                        teamMode = draftTeamMode,
+                                        onTeamMode = {
+                                            draftTeamMode = it
+                                        },
+                                        teamA = draftTeamA,
+                                        onTeamA = {
+                                            draftTeamA = it
+                                        },
+                                        teamB = draftTeamB,
+                                        onTeamB = {
+                                            draftTeamB = it
+                                        },
+                                        notes = draftNotes,
+                                        onNotes = {
+                                            draftNotes = it
+                                        },
+                                        onStart = {
+                                            name = selectedGameName()
+
+                                            players = draftPlayers.map {
+                                                it.trim()
+                                            }
+
+                                            starts = draftStarts.map {
+                                                it.trim()
+                                                    .toIntOrNull()
+                                                    ?.coerceIn(
+                                                        -9999,
+                                                        9999
+                                                    )
+                                                    ?: 0
+                                            }
+
+                                            emojis = draftEmojis.toList()
+
+                                            rule = draftRule
+
+                                            target = draftTarget
+                                                .trim()
+                                                .toIntOrNull()
+                                                ?.coerceIn(0, 9999)
+                                                ?: 0
+
+                                            notes = draftNotes.trim()
+
+                                            teamMode = draftTeamMode
+                                            teamAssign = draftTeams.toList()
+
+                                            teamNames = listOf(
+                                                draftTeamA.trim().ifEmpty {
+                                                    if (english) {
+                                                        "Team A"
+                                                    } else {
+                                                        "Команда А"
+                                                    }
+                                                },
+                                                draftTeamB.trim().ifEmpty {
+                                                    if (english) {
+                                                        "Team B"
+                                                    } else {
+                                                        "Команда Б"
+                                                    }
+                                                }
+                                            )
+
+                                            rounds.clear()
+                                            rounds.add(
+                                                newRound(players.size)
+                                            )
+
+                                            undoStack.clear()
+                                            finished = false
+                                            active = true
+                                            turn = 0
+                                            big = false
+                                        }
+                                    )
+                                } else {
+                                    if (big) {
+                                        BigScreen(
+                                            name = name,
+                                            players = players,
+                                            emojis = emojis,
+                                            sc = totals(
+                                                rounds,
+                                                starts
+                                            ),
+                                            finished = finished,
+                                            rule = rule,
+                                            teamMode = teamMode,
+                                            teamAssign = teamAssign,
+                                            teamNames = teamNames,
+                                            onNormal = {
+                                                big = false
+                                            },
+                                            onFinish = {
+                                                confirm = "finish"
+                                            },
+                                            onNew = {
+                                                resetGame()
+                                            }
+                                        )
+                                    } else {
+                                        GamePage(
+                                            name = name,
+                                            players = players,
+                                            emojis = emojis,
+                                            starts = starts,
+                                            rule = rule,
+                                            target = target,
+                                            teamMode = teamMode,
+                                            teamAssign = teamAssign,
+                                            teamNames = teamNames,
+                                            rounds = rounds,
+                                            finished = finished,
+                                            turn = turn,
+                                            onTurn = {
+                                                turn = it
+                                            },
+                                            onBig = {
+                                                big = true
+                                            },
+                                            onAdd = {
+                                                pushUndo()
+                                                rounds.add(
+                                                    newRound(players.size)
+                                                )
+                                            },
+                                            onRemoveAsk = {
+                                                confirm = "round"
+                                            },
+                                            onUndo = {
+                                                restoreUndo()
+                                            },
+                                            canUndo = undoStack.isNotEmpty(),
+                                            pushUndo = {
+                                                pushUndo()
+                                            },
+                                            onFinishAsk = {
+                                                confirm = "finish"
+                                            },
+                                            onAutoFinish = {
+                                                doFinish()
+                                            },
+                                            onResetAsk = {
+                                                if (finished) {
+                                                    resetGame()
+                                                } else {
+                                                    confirm = "discard"
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            1 -> {
+                                HistoryPage(
+                                    games = history,
+                                    onOpen = {
+                                        selected = it
+                                    },
+                                    onDelete = {
+                                        deleteId = it.id
+                                        confirm = "delete"
+                                    },
+                                    tours = tournaments,
+                                    onTours = {
+                                        tournaments = it
+                                        s.saveTournaments(it)
+                                    }
+                                )
+                            }
+
+                            2 -> {
+                                StatsPage(history)
+                            }
+
+                            else -> {
+                                SettingsPage(
+                                    theme = theme,
+                                    onTheme = {
+                                        theme = it
+                                        s.theme = it
+                                    },
+                                    accent = accent,
+                                    onAccent = {
+                                        accent = it
+                                        s.accent = it
+                                    },
+                                    style = style,
+                                    onStyle = {
+                                        style = it
+                                        s.style = it
+                                    },
+                                    english = english,
+                                    onEnglish = {
+                                        english = it
+                                        s.english = it
+                                    },
+                                    motion = motion,
+                                    onMotion = {
+                                        motion = it
+                                        s.animations = it
+                                    },
+                                    sound = sound,
+                                    onSound = {
+                                        sound = it
+                                        s.sound = it
+                                    },
+                                    historyCount = history.size,
+                                    onClear = {
+                                        confirm = "clear"
+                                    },
+                                    tourCount = tournaments.size
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (help) {
+                HelpDialog {
+                    help = false
+                }
+            }
+
+            selected?.let { game ->
+                HistoryDetails(game) {
+                    selected = null
+                }
+            }
+
+            confirm?.let { action ->
+                val title = when (action) {
+                    "round" -> {
+                        tr(
+                            "Удалить последний раунд?",
+                            "Delete the last round?"
+                        )
+                    }
+
+                    "clear" -> {
+                        tr(
+                            "Очистить историю?",
+                            "Clear history?"
+                        )
+                    }
+
+                    "delete" -> {
+                        tr(
+                            "Удалить запись?",
+                            "Delete entry?"
+                        )
+                    }
+
+                    "discard" -> {
+                        tr(
+                            "Закрыть партию?",
+                            "Close game?"
+                        )
+                    }
+
+                    else -> {
+                        tr(
+                            "Завершить партию?",
+                            "Finish game?"
+                        )
+                    }
+                }
+
+                val message =
+                    if (action == "discard" && !finished) {
+                        tr(
+                            "Незавершённая партия будет удалена.",
+                            "The unfinished game will be discarded."
+                        )
+                    } else {
+                        tr(
+                            "Это действие нельзя отменить.",
+                            "This action cannot be undone."
+                        )
+                    }
+
+                AlertDialog(
+                    onDismissRequest = {
+                        confirm = null
+                    },
+                    title = {
+                        Text(title)
+                    },
+                    text = {
+                        Text(message)
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                when (action) {
+                                    "finish" -> {
+                                        doFinish()
+                                    }
+
+                                    "discard" -> {
+                                        resetGame()
+                                    }
+
+                                    "round" -> {
+                                        if (rounds.size > 1) {
+                                            pushUndo()
+                                            rounds.removeAt(
+                                                rounds.lastIndex
+                                            )
+                                        }
+                                    }
+
+                                    "clear" -> {
+                                        history = emptyList()
+                                        s.saveHistory(history)
+                                    }
+
+                                    "delete" -> {
+                                        history = history.filterNot {
+                                            it.id == deleteId
+                                        }
+
+                                        s.saveHistory(history)
+                                    }
+                                }
+
+                                confirm = null
+                            }
+                        ) {
+                            Text(
+                                tr(
+                                    "Подтвердить",
+                                    "Confirm"
+                                )
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                confirm = null
+                            }
+                        ) {
+                            Text(
+                                tr(
+                                    "Отмена",
+                                    "Cancel"
+                                )
+                            )
+                        }
+                    }
+                )
+            }
+        }
+    }
 }
+
 
 @Composable
 private fun Page(c: @Composable ColumnScope.() -> Unit) {
@@ -672,87 +1468,472 @@ private fun Choice(
 }
 
 @Composable
-private fun SetupPage(tpl: Int, onTpl: (Int) -> Unit, name: String, onName: (String) -> Unit, names: SnapshotStateList<String>, starts: SnapshotStateList<String>, emojis: SnapshotStateList<String>, teams: SnapshotStateList<Int>, rule: WinRule, onRule: (WinRule) -> Unit, target: String, onTarget: (String) -> Unit, teamMode: Boolean, onTeamMode: (Boolean) -> Unit, teamA: String, onTeamA: (String) -> Unit, teamB: String, onTeamB: (String) -> Unit, notes: String, onNotes: (String) -> Unit, onStart: () -> Unit) {
-  val clean = names.map { it.trim() }
-  val errs = clean.map { v ->
-    when {
-      v.isEmpty() -> tr("Введите имя", "Enter a name")
-      v.length > 15 -> tr("Максимум 15", "Max 15")
-      clean.count { it.equals(v, true) } > 1 -> tr("Имя уже есть", "Name used")
-      else -> null
-    }
-  }
-  val startsOk = starts.all { it.trim().toIntOrNull() in -9999..9999 }
-  val targetOk = target.trim().toIntOrNull() in 0..9999
-  val ok = name.trim().length in 1..30 && names.size in 2..8 && errs.all { it == null } && startsOk && targetOk
-  Page {
-    Heading(tr("Время играть", "Time to play"), tr("Шаблон подставит цель и правило.", "A template sets goal and rule."))
-    GlowPanel(hi = true) {
-      Text(tr("Шаблон игры", "Game template"), fontWeight = FontWeight.Bold)
-      Templates.forEachIndexed { i, t -> Choice(if (LocalEnglish.current) t.en else t.ru, tpl == i) { onTpl(i) } }
-    }
-    GlowPanel(hi = true) {
-  Text(
-    tr("Шаблон игры", "Game template"),
-    fontWeight = FontWeight.Bold
-  )
+private fun SetupPage(
+    tpl: Int,
+    onTpl: (Int) -> Unit,
 
-  Row(
-    modifier = Modifier.horizontalScroll(rememberScrollState()),
-    horizontalArrangement = Arrangement.spacedBy(8.dp)
-  ) {
-    Templates.forEachIndexed { i, template ->
-      FilterChip(
-        selected = tpl == i,
-        onClick = { onTpl(i) },
-        label = {
-          Text(
-            if (LocalEnglish.current) template.en else template.ru
-          )
-        }
-      )
-    }
-  }
-}
-    GlowPanel {
-      Text(tr("Участники", "Players") + " · ${names.size}/8", fontWeight = FontWeight.Bold)
-      names.forEachIndexed { i, v ->
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          TextButton(onClick = { emojis[i] = Emojis[(Emojis.indexOf(emojis[i]) + 1).mod(Emojis.size)] }) { Text(emojis[i], fontSize = 22.sp) }
-          Column(Modifier.weight(1f)) {
-            OutlinedTextField(v, { names[i] = it }, Modifier.fillMaxWidth(), label = { Text(tr("Игрок", "Player") + " ${i + 1}") }, singleLine = true, shape = RoundedCornerShape(16.dp), isError = v.isNotEmpty() && errs[i] != null)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-              OutlinedTextField(starts[i], { starts[i] = it }, Modifier.width(96.dp), label = { Text(tr("Старт", "Start")) }, singleLine = true, shape = RoundedCornerShape(12.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-              if (teamMode) TextButton(onClick = { teams[i] = 1 - teams[i] }) { Text(if (teams[i] == 0) teamA.ifEmpty { "A" } else teamB.ifEmpty { "B" }) }
-              if (names.size > 2) TextButton(onClick = { names.removeAt(i); starts.removeAt(i); emojis.removeAt(i); teams.removeAt(i) }, modifier = Modifier.size(48.dp), contentPadding = PaddingValues(0.dp)) { Text("×", fontSize = 24.sp) }
+    name: String,
+    onName: (String) -> Unit,
+
+    names: SnapshotStateList<String>,
+    starts: SnapshotStateList<String>,
+    emojis: SnapshotStateList<String>,
+    teams: SnapshotStateList<Int>,
+
+    rule: WinRule,
+    onRule: (WinRule) -> Unit,
+
+    target: String,
+    onTarget: (String) -> Unit,
+
+    teamMode: Boolean,
+    onTeamMode: (Boolean) -> Unit,
+
+    teamA: String,
+    onTeamA: (String) -> Unit,
+
+    teamB: String,
+    onTeamB: (String) -> Unit,
+
+    notes: String,
+    onNotes: (String) -> Unit,
+
+    onStart: () -> Unit
+) {
+    val isFreeGame = tpl == 0
+
+    val cleanNames = names.map { it.trim() }
+
+    val errors = cleanNames.map { value ->
+        when {
+            value.isEmpty() -> {
+                tr("Введите имя", "Enter a name")
             }
-          }
+
+            value.length > 15 -> {
+                tr("Максимум 15 символов", "Maximum 15 characters")
+            }
+
+            cleanNames.count { it.equals(value, ignoreCase = true) } > 1 -> {
+                tr("Имя уже используется", "Name already used")
+            }
+
+            else -> null
         }
-      }
-      OutlinedButton(onClick = { names.add(""); starts.add("0"); emojis.add(Emojis[names.size % Emojis.size]); teams.add(0) }, enabled = names.size < 8, modifier = Modifier.fillMaxWidth()) { Text(tr("+ Добавить игрока", "+ Add player")) }
     }
-    GlowPanel {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f)) {
-          Text(tr("Командный режим", "Team mode"), fontWeight = FontWeight.Bold)
-          Text(tr("Счёт по командам", "Scores by teams"), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+    val startsOk = starts.all {
+        it.trim().toIntOrNull() in -9999..9999
+    }
+
+    val targetValue = target.trim().toIntOrNull()
+
+    val targetOk = targetValue != null && targetValue in 0..9999
+
+    val nameOk = if (isFreeGame) {
+        name.trim().length in 1..30
+    } else {
+        true
+    }
+
+    val canStart =
+        nameOk &&
+        names.size in 2..8 &&
+        errors.all { it == null } &&
+        startsOk &&
+        targetOk
+
+    Page {
+        Heading(
+            tr("Время играть", "Time to play"),
+            tr(
+                "Выберите шаблон и настройте участников.",
+                "Choose a template and configure the players."
+            )
+        )
+
+        GlowPanel(hi = true) {
+            Text(
+                text = tr("Шаблон игры", "Game template"),
+                fontWeight = FontWeight.Bold
+            )
+
+            Row(
+                modifier = Modifier.horizontalScroll(
+                    rememberScrollState()
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Templates.forEachIndexed { index, template ->
+                    FilterChip(
+                        selected = tpl == index,
+                        onClick = {
+                            onTpl(index)
+                        },
+                        label = {
+                            Text(
+                                if (LocalEnglish.current) {
+                                    template.en
+                                } else {
+                                    template.ru
+                                }
+                            )
+                        }
+                    )
+                }
+            }
         }
-        Switch(teamMode, onTeamMode)
-      }
-      if (teamMode) {
-        OutlinedTextField(teamA, onTeamA, Modifier.fillMaxWidth(), label = { Text("A") }, singleLine = true, shape = RoundedCornerShape(14.dp))
-        OutlinedTextField(teamB, onTeamB, Modifier.fillMaxWidth(), label = { Text("B") }, singleLine = true, shape = RoundedCornerShape(14.dp))
-      }
-      Text(tr("Победа", "Win rule"), fontWeight = FontWeight.Bold)
-      Choice(tr("Больше очков", "Higher wins"), rule == WinRule.MAX) { onRule(WinRule.MAX) }
-      Choice(tr("Меньше очков", "Lower wins"), rule == WinRule.MIN) { onRule(WinRule.MIN) }
+
+        if (isFreeGame) {
+            GlowPanel {
+                Text(
+                    text = tr("Название игры", "Game name"),
+                    fontWeight = FontWeight.Bold
+                )
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = onName,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = {
+                        Text(
+                            tr(
+                                "Название",
+                                "Name"
+                            )
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            tr(
+                                "Например: Вечер настольных игр",
+                                "For example: Board game night"
+                            )
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    isError = name.isNotEmpty() && name.trim().length > 30
+                )
+
+                Text(
+                    text = tr(
+                        "От 1 до 30 символов",
+                        "From 1 to 30 characters"
+                    ),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (name.isNotEmpty() && name.trim().length > 30) {
+                    Text(
+                        text = tr(
+                            "Максимум 30 символов",
+                            "Maximum 30 characters"
+                        ),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+
+        GlowPanel {
+            Text(
+                text = tr(
+                    "Участники · ${names.size}/8",
+                    "Players · ${names.size}/8"
+                ),
+                fontWeight = FontWeight.Bold
+            )
+
+            names.forEachIndexed { index, value ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            val currentIndex =
+                                Emojis.indexOf(emojis[index])
+                                    .coerceAtLeast(0)
+
+                            emojis[index] =
+                                Emojis[
+                                    (currentIndex + 1).mod(Emojis.size)
+                                ]
+                        }
+                    ) {
+                        Text(
+                            text = emojis[index],
+                            fontSize = 22.sp
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = {
+                                names[index] = it
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = {
+                                Text(
+                                    tr(
+                                        "Игрок ${index + 1}",
+                                        "Player ${index + 1}"
+                                    )
+                                )
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            isError = value.isNotEmpty() &&
+                                errors[index] != null
+                        )
+
+                        if (value.isNotEmpty() && errors[index] != null) {
+                            Text(
+                                text = errors[index]!!,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = starts[index],
+                                onValueChange = {
+                                    starts[index] = it
+                                },
+                                modifier = Modifier.width(96.dp),
+                                label = {
+                                    Text(
+                                        tr("Старт", "Start")
+                                    )
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number
+                                ),
+                                isError = starts[index]
+                                    .trim()
+                                    .toIntOrNull() !in -9999..9999
+                            )
+
+                            if (teamMode) {
+                                TextButton(
+                                    onClick = {
+                                        teams[index] = 1 - teams[index]
+                                    }
+                                ) {
+                                    Text(
+                                        if (teams[index] == 0) {
+                                            teamA.ifBlank {
+                                                tr(
+                                                    "Команда A",
+                                                    "Team A"
+                                                )
+                                            }
+                                        } else {
+                                            teamB.ifBlank {
+                                                tr(
+                                                    "Команда B",
+                                                    "Team B"
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+
+                            if (names.size > 2) {
+                                TextButton(
+                                    onClick = {
+                                        names.removeAt(index)
+                                        starts.removeAt(index)
+                                        emojis.removeAt(index)
+                                        teams.removeAt(index)
+                                    },
+                                    modifier = Modifier.size(48.dp),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text(
+                                        text = "×",
+                                        fontSize = 24.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            OutlinedButton(
+                onClick = {
+                    names.add("")
+                    starts.add("0")
+                    emojis.add(
+                        Emojis[names.size.mod(Emojis.size)]
+                    )
+                    teams.add(0)
+                },
+                enabled = names.size < 8,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    tr(
+                        "+ Добавить игрока",
+                        "+ Add player"
+                    )
+                )
+            }
+        }
+
+        GlowPanel {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = tr(
+                            "Командный режим",
+                            "Team mode"
+                        ),
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = tr(
+                            "Счёт по командам",
+                            "Scores by teams"
+                        ),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Switch(
+                    checked = teamMode,
+                    onCheckedChange = onTeamMode
+                )
+            }
+
+            if (teamMode) {
+                OutlinedTextField(
+                    value = teamA,
+                    onValueChange = onTeamA,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = {
+                        Text(
+                            tr("Команда A", "Team A")
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp)
+                )
+
+                OutlinedTextField(
+                    value = teamB,
+                    onValueChange = onTeamB,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = {
+                        Text(
+                            tr("Команда B", "Team B")
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp)
+                )
+            }
+
+            Text(
+                text = tr("Победа", "Win rule"),
+                fontWeight = FontWeight.Bold
+            )
+
+            Choice(
+                text = tr(
+                    "Больше очков",
+                    "Higher score wins"
+                ),
+                sel = rule == WinRule.MAX,
+                onClick = {
+                    onRule(WinRule.MAX)
+                }
+            )
+
+            Choice(
+                text = tr(
+                    "Меньше очков",
+                    "Lower score wins"
+                ),
+                sel = rule == WinRule.MIN,
+                onClick = {
+                    onRule(WinRule.MIN)
+                }
+            )
+
+            OutlinedTextField(
+                value = target,
+                onValueChange = onTarget,
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text(
+                        tr(
+                            "Цель, необязательно",
+                            "Target, optional"
+                        )
+                    )
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                ),
+                isError = target.isNotEmpty() && !targetOk
+            )
+        }
+
+        GlowPanel {
+            Text(
+                text = tr("Заметка", "Note"),
+                fontWeight = FontWeight.Bold
+            )
+
+            OutlinedTextField(
+                value = notes,
+                onValueChange = onNotes,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(
+                        tr(
+                            "Где играли",
+                            "Where you played"
+                        )
+                    )
+                },
+                shape = RoundedCornerShape(16.dp)
+            )
+        }
+
+        MainButton(
+            t = tr(
+                "Начать партию",
+                "Start game"
+            ),
+            e = canStart,
+            onClick = onStart
+        )
     }
-    GlowPanel {
-      Text(tr("Заметка", "Note"), fontWeight = FontWeight.Bold)
-      OutlinedTextField(notes, onNotes, Modifier.fillMaxWidth(), placeholder = { Text(tr("Где играли", "Where you played")) }, shape = RoundedCornerShape(16.dp))
-    }
-    MainButton(tr("Начать партию", "Start game"), ok, onStart)
-  }
 }
 
 @Composable
