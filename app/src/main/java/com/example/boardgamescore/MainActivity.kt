@@ -406,12 +406,24 @@ var turn by rememberSaveable { mutableStateOf(0) }
     if (finished || !active) return
     val sc = totals(rounds, starts)
     if (sc.any { it == null }) return
-    val g = SavedGame(UUID.randomUUID().toString(), name, System.currentTimeMillis(), players.toList(), rounds.map { r -> r.map { parseScore(it)!! } }, rule, target, notes, starts.toList(), teamMode, teamAssign.toList(), teamNames.toList())
-    history = listOf(g) + history
-    s.saveHistory(history)
-    finished = true
-    vibrateNow(ctx)
-    scope.launch { fanfare(sound) }
+    val g = SavedGame(
+  UUID.randomUUID().toString(),
+  name,
+  System.currentTimeMillis(),
+  players.toList(),
+  rounds.map { round ->
+    round.map { value ->
+      parseScore(value)!!
+    }
+  },
+  rule,
+  target,
+  notes,
+  starts.toList(),
+  teamMode,
+  teamAssign.toList(),
+  teamNames.toList()
+)
     if (tournaments.isNotEmpty() && !teamMode) {
       val vs = sc.filterNotNull()
       val best = if (rule == WinRule.MAX) vs.maxOrNull()!! else vs.minOrNull()!!
@@ -1382,21 +1394,21 @@ private fun GamePage(
                     val currentValue = row[playerIndex]
 
                     OutlinedTextField(
-                      value = currentValue,
-                      onValueChange = { newValue ->
-                        if (!finished) {
-                          row[playerIndex] = newValue
-                        }
-                      },
-                      modifier = Modifier.fillMaxWidth(),
-                      readOnly = finished,
-                      singleLine = true,
-                      isError = parseScore(currentValue) == null,
-                      shape = RoundedCornerShape(14.dp),
-                      keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number
-                      )
-                    )
+  value = cur,
+  onValueChange = { newValue ->
+    if (!finished) {
+      row[c] = newValue
+    }
+  },
+  modifier = Modifier.fillMaxWidth(),
+  readOnly = finished,
+  singleLine = true,
+  isError = parseScore(cur) == null,
+  shape = RoundedCornerShape(14.dp),
+  keyboardOptions = KeyboardOptions(
+    keyboardType = KeyboardType.Number
+  )
+)
 
                     if (!finished) {
                       TextButton(
@@ -1518,6 +1530,7 @@ private fun GamePage(
   }
 }
 
+it.first.toDouble() }
 @Composable
 private fun StatsPage(games: List<SavedGame>) {
   Page {
@@ -1529,7 +1542,7 @@ private fun StatsPage(games: List<SavedGame>) {
     if (games.isEmpty()) {
       GlowPanel {
         Text(
-          tr("Нет данных", "No data"),
+          text = tr("Нет данных", "No data"),
           fontWeight = FontWeight.Bold
         )
       }
@@ -1538,20 +1551,20 @@ private fun StatsPage(games: List<SavedGame>) {
     }
 
     val names = games
-      .flatMap { it.players }
+      .flatMap { game -> game.players }
       .distinct()
       .sorted()
 
     names.forEach { playerName ->
       val played = games.count { game ->
-        game.players.any {
-          it.equals(playerName, ignoreCase = true)
+        game.players.any { name ->
+          name.equals(playerName, ignoreCase = true)
         }
       }
 
       val results = games.mapNotNull { game ->
-        val playerIndex = game.players.indexOfFirst {
-          it.equals(playerName, ignoreCase = true)
+        val playerIndex = game.players.indexOfFirst { name ->
+          name.equals(playerName, ignoreCase = true)
         }
 
         if (playerIndex < 0) {
@@ -1568,30 +1581,34 @@ private fun StatsPage(games: List<SavedGame>) {
           if (bestScore == null) {
             null
           } else {
+            val playerScore = scores[playerIndex]
+            val isBest = playerScore == bestScore
+            val isTie = scores.count { score ->
+              score == bestScore
+            } > 1
+
             Triple(
-              scores[playerIndex],
-              scores[playerIndex] == bestScore,
-              scores.count { it == bestScore } > 1
+              playerScore,
+              isBest,
+              isTie
             )
           }
         }
       }
 
-      // Победа только без ничьей.
-      val wins = results.count {
-        it.second && !it.third
+      val wins = results.count { result ->
+        result.second && !result.third
       }
 
-      // Ничья засчитывается только если игрок сам имеет лучший результат.
-      val ties = results.count {
-        it.second && it.third
+      val ties = results.count { result ->
+        result.second && result.third
       }
 
       val average = if (results.isEmpty()) {
         0.0
       } else {
         results
-          .map { it.first.toDouble() }
+          .map { result -> result.first.toDouble() }
           .average()
       }
 
