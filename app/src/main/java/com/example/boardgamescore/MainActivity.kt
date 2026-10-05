@@ -551,21 +551,72 @@ private fun Page(c: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun GlowPanel(mod: Modifier = Modifier, hi: Boolean = false, c: @Composable ColumnScope.() -> Unit) {
+private fun GlowPanel(
+  mod: Modifier = Modifier,
+  hi: Boolean = false,
+  c: @Composable ColumnScope.() -> Unit
+) {
   val cs = MaterialTheme.colorScheme
   val mo = LocalMotion.current
-  val st by animateFloatAsState(if (hi) 0.28f else 0.08f, tween(if (mo) 350 else 0), label = "gl")
-  val sh = RoundedCornerShape(24.dp)
-  Surface(mod.fillMaxWidth().shadow(if (hi) 14.dp else 3.dp, sh, ambientColor = cs.primary, spotColor = cs.primary), shape = sh, color = cs.surface, border = BorderStroke(1.dp, Brush.linearGradient(listOf(cs.primary.copy(if (hi) 0.7f else 0.3f), cs.secondary.copy(0.1f), cs.primary.copy(0.15f))))) {
-    Column(Modifier.background(Brush.linearGradient(listOf(cs.primary.copy(st), Color.Transparent, cs.secondary.copy(st * 0.6f)))).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = c)
+  val glow by animateFloatAsState(
+    targetValue = if (hi) 0.18f else 0.05f,
+    animationSpec = tween(if (mo) 300 else 0),
+    label = "glow"
+  )
+  val shape = RoundedCornerShape(24.dp)
+
+  Surface(
+    modifier = mod
+      .fillMaxWidth()
+      .shadow(
+        elevation = if (hi) 8.dp else 2.dp,
+        shape = shape,
+        ambientColor = cs.primary.copy(alpha = 0.18f),
+        spotColor = cs.primary.copy(alpha = 0.18f)
+      ),
+    shape = shape,
+    color = cs.surface,
+    border = BorderStroke(
+      1.dp,
+      cs.primary.copy(alpha = if (hi) 0.30f else 0.10f)
+    )
+  ) {
+    Column(
+      modifier = Modifier
+        .background(
+          Brush.linearGradient(
+            listOf(
+              cs.primary.copy(alpha = glow),
+              Color.Transparent,
+              cs.secondary.copy(alpha = glow * 0.45f)
+            )
+          )
+        )
+        .padding(20.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+      content = c
+    )
   }
 }
 
 @Composable
 private fun Heading(t: String, s: String) {
-  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    Text(t, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.ExtraBold)
-    Text(s, color = MaterialTheme.colorScheme.onSurfaceVariant)
+  Column(
+    verticalArrangement = Arrangement.spacedBy(6.dp)
+  ) {
+    Text(
+      text = t,
+      fontSize = 30.sp,
+      lineHeight = 36.sp,
+      fontWeight = FontWeight.ExtraBold,
+      color = MaterialTheme.colorScheme.onBackground
+    )
+    Text(
+      text = s,
+      fontSize = 14.sp,
+      lineHeight = 20.sp,
+      color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
   }
 }
 
@@ -577,11 +628,45 @@ private fun MainButton(t: String, e: Boolean = true, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Choice(text: String, sel: Boolean, onClick: () -> Unit) {
-  Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = if (sel) MaterialTheme.colorScheme.primary.copy(0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(0.35f)) {
-    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-      RadioButton(selected = sel, onClick = null)
-      Text(text, modifier = Modifier.weight(1f))
+private fun Choice(
+  text: String,
+  sel: Boolean,
+  onClick: () -> Unit
+) {
+  val colors = MaterialTheme.colorScheme
+
+  Surface(
+    onClick = onClick,
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(16.dp),
+    color = if (sel) {
+      colors.primary.copy(alpha = 0.10f)
+    } else {
+      colors.surfaceVariant.copy(alpha = 0.25f)
+    },
+    border = BorderStroke(
+      width = 1.dp,
+      color = if (sel) {
+        colors.primary.copy(alpha = 0.55f)
+      } else {
+        colors.outline.copy(alpha = 0.15f)
+      }
+    )
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+      RadioButton(
+        selected = sel,
+        onClick = null
+      )
+      Text(
+        text = text,
+        modifier = Modifier.weight(1f),
+        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal
+      )
     }
   }
 }
@@ -606,11 +691,29 @@ private fun SetupPage(tpl: Int, onTpl: (Int) -> Unit, name: String, onName: (Str
       Text(tr("Шаблон игры", "Game template"), fontWeight = FontWeight.Bold)
       Templates.forEachIndexed { i, t -> Choice(if (LocalEnglish.current) t.en else t.ru, tpl == i) { onTpl(i) } }
     }
-    GlowPanel {
-      Text(tr("Название и цель", "Name and target"), fontWeight = FontWeight.Bold)
-      OutlinedTextField(name, onName, Modifier.fillMaxWidth(), placeholder = { Text(tr("Например, Уно", "For example, UNO")) }, singleLine = true, shape = RoundedCornerShape(16.dp))
-      OutlinedTextField(target, onTarget, Modifier.fillMaxWidth(), label = { Text(tr("Цель (0 — без автофиниша)", "Target (0 — off)")) }, singleLine = true, shape = RoundedCornerShape(16.dp), isError = !targetOk, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+    GlowPanel(hi = true) {
+  Text(
+    tr("Шаблон игры", "Game template"),
+    fontWeight = FontWeight.Bold
+  )
+
+  Row(
+    modifier = Modifier.horizontalScroll(rememberScrollState()),
+    horizontalArrangement = Arrangement.spacedBy(8.dp)
+  ) {
+    Templates.forEachIndexed { i, template ->
+      FilterChip(
+        selected = tpl == i,
+        onClick = { onTpl(i) },
+        label = {
+          Text(
+            if (LocalEnglish.current) template.en else template.ru
+          )
+        }
+      )
     }
+  }
+}
     GlowPanel {
       Text(tr("Участники", "Players") + " · ${names.size}/8", fontWeight = FontWeight.Bold)
       names.forEachIndexed { i, v ->
