@@ -1200,7 +1200,8 @@ private fun ScoreApp(s: Storage) {
                     }
                 }
             }
-
+        }
+    }
             if (help) {
                 HelpDialog {
                     help = false
@@ -1522,10 +1523,10 @@ private fun SetupPage(
         }
     }
 
-    val startsOk = starts.all {
-        it.trim().toIntOrNull() in -9999..9999
-    }
-
+val startsOk = starts.all {
+    val value = it.trim().toIntOrNull()
+    value != null && value in -9999..9999
+}
     val targetValue = target.trim().toIntOrNull()
 
     val targetOk = targetValue != null && targetValue in 0..9999
@@ -1722,8 +1723,10 @@ private fun SetupPage(
                                     keyboardType = KeyboardType.Number
                                 ),
                                 isError = starts[index]
-                                    .trim()
-                                    .toIntOrNull() !in -9999..9999
+                                  .trim()
+                                  .toIntOrNull()
+                                  ?.let { it !in -9999..9999 }
+                                  ?: true
                             )
 
                             if (teamMode) {
@@ -2171,7 +2174,10 @@ private fun HistoryPage(games: List<SavedGame>, onOpen: (SavedGame) -> Unit, onD
   var tTarget by remember { mutableStateOf("3") }
   val plist = tPlayers.split(",").map { it.trim() }.filter { it.isNotEmpty() }
   val tw = tTarget.toIntOrNull()
-  val okT = tName.trim().length in 1..40 && plist.size in 2..8 && tw in 1..20
+  val okT = tName.trim().length in 1..40 &&
+      plist.size in 2..8 &&
+      tw != null &&
+      tw in 1..20
   Page {
     Heading(tr("История", "History"), tr("Партии и турниры", "Games and tournaments"))
     if (games.isEmpty()) {
