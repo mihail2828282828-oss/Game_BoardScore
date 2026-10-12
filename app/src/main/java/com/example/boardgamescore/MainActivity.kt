@@ -766,6 +766,11 @@ private fun ScoreApp(s: Storage) {
                                         onTeamB = { draftTeamB = it },
                                         notes = draftNotes,
                                         onNotes = { draftNotes = it },
+                                        tours = tournaments,
+                                        onTours = { updated ->
+                                            tournaments = updated
+                                            s.saveTournaments(updated)
+                                        },
                                         onStart = {
                                             name = selectedGameName()
                                             players = draftPlayers.map { it.trim() }
@@ -864,11 +869,6 @@ private fun ScoreApp(s: Storage) {
                                     onDelete = {
                                         deleteId = it.id
                                         confirm = "delete"
-                                    },
-                                    tours = tournaments,
-                                    onTours = {
-                                        tournaments = it
-                                        s.saveTournaments(it)
                                     }
                                 )
                             }
@@ -1030,6 +1030,63 @@ private fun ScoreApp(s: Storage) {
     }
 }
 
+@Composable
+private fun SplashScreenMockup() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF20153A),
+                        Color(0xFF101019),
+                        Color(0xFF101019)
+                    )
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(32.dp),
+                color = Color(0xFF34244F),
+                border = BorderStroke(
+                    1.dp,
+                    Color(0xFFB79CFF)
+                )
+            ) {
+                Text(
+                    text = "🎲",
+                    modifier = Modifier.padding(28.dp),
+                    fontSize = 64.sp
+                )
+            }
+
+            Text(
+                text = "SCORE CLUB",
+                color = Color.White,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 3.sp
+            )
+
+            Text(
+                text = "Каждая партия — история",
+                color = Color(0xFFB79CFF),
+                fontSize = 16.sp
+            )
+
+            Text(
+                text = "Настольные игры · Очки · Турниры",
+                color = Color(0xFFB8B1C7),
+                fontSize = 12.sp
+            )
+        }
+    }
+}
 
 @Composable
 private fun Page(c: @Composable ColumnScope.() -> Unit) {
@@ -1187,7 +1244,8 @@ private fun SetupPage(
 
     notes: String,
     onNotes: (String) -> Unit,
-
+    tours: List<Tournament>,
+    onTours: (List<Tournament>) -> Unit,
     onStart: () -> Unit
 ) {
     val isFreeGame = tpl == 0
@@ -1241,7 +1299,10 @@ val startsOk = starts.all {
                 "Choose a template and configure the players."
             )
         )
-
+        TournamentSection(
+            tours = tours,
+            onTours = onTours
+        )
         GlowPanel(hi = true) {
             Text(
                 text = tr("Шаблон игры", "Game template"),
@@ -1854,9 +1915,265 @@ private fun GamePage(name: String, players: List<String>, emojis: List<String>, 
     }
   }
 }
-
 @Composable
-private fun HistoryPage(games: List<SavedGame>, onOpen: (SavedGame) -> Unit, onDelete: (SavedGame) -> Unit, tours: List<Tournament>, onTours: (List<Tournament>) -> Unit) {
+private fun TournamentSection(
+    tours: List<Tournament>,
+    onTours: (List<Tournament>) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var tournamentName by remember { mutableStateOf("") }
+    var playersText by remember { mutableStateOf("") }
+    var targetText by remember { mutableStateOf("3") }
+
+    val playerNames = playersText
+        .split(",")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+
+    val targetWins = targetText.trim().toIntOrNull()
+
+    val namesAreUnique =
+        playerNames.map { it.lowercase(Locale.ROOT) }.distinct().size ==
+            playerNames.size
+
+    val canCreate =
+        tournamentName.trim().length in 1..40 &&
+        playerNames.size in 2..8 &&
+        namesAreUnique &&
+        targetWins != null &&
+        targetWins in 1..20
+
+    GlowPanel(hi = tours.isNotEmpty()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    text = tr("🏆 Турниры", "🏆 Tournaments"),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = tr(
+                        "До заданного числа побед",
+                        "Play to a chosen number of wins"
+                    ),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(
+                    if (expanded) {
+                        tr("Свернуть", "Hide")
+                    } else {
+                        tr("Открыть", "Open")
+                    }
+                )
+            }
+        }
+
+        if (expanded) {
+            if (tours.isEmpty()) {
+                Text(
+                    tr(
+                        "Пока нет турниров. Создайте первый!",
+                        "No tournaments yet. Create your first one!"
+                    )
+                )
+            }
+
+            tours.forEach { tournament ->
+                key(tournament.id) {
+                    HorizontalDivider()
+
+                    Text(
+                        text = tournament.name,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = tr(
+                            "Цель: ${tournament.targetWins} побед",
+                            "Target: ${tournament.targetWins} wins"
+                        ),
+                        fontSize = 12.sp
+                    )
+
+                    tournament.players.forEachIndexed { index, player ->
+                        val wins = tournament.wins.getOrElse(index) { 0 }
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "$player — $wins" +
+                                    if (wins >= tournament.targetWins) {
+                                        " 🏆"
+                                    } else {
+                                        ""
+                                    }
+                            )
+
+                            Row {
+                                TextButton(
+                                    onClick = {
+                                        val updatedWins =
+                                            tournament.wins.toMutableList()
+
+                                        if (index in updatedWins.indices) {
+                                            updatedWins[index]++
+
+                                            onTours(
+                                                tours.map {
+                                                    if (it.id == tournament.id) {
+                                                        it.copy(wins = updatedWins)
+                                                    } else {
+                                                        it
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Text("+1")
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        val updatedWins =
+                                            tournament.wins.toMutableList()
+
+                                        if (index in updatedWins.indices &&
+                                            updatedWins[index] > 0
+                                        ) {
+                                            updatedWins[index]--
+
+                                            onTours(
+                                                tours.map {
+                                                    if (it.id == tournament.id) {
+                                                        it.copy(wins = updatedWins)
+                                                    } else {
+                                                        it
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Text("−1")
+                                }
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = {
+                            onTours(
+                                tours.filterNot {
+                                    it.id == tournament.id
+                                }
+                            )
+                        }
+                    ) {
+                        Text(
+                            text = tr(
+                                "Удалить турнир",
+                                "Delete tournament"
+                            ),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+
+            Text(
+                text = tr(
+                    "Новый турнир",
+                    "New tournament"
+                ),
+                fontWeight = FontWeight.Bold
+            )
+
+            OutlinedTextField(
+                value = tournamentName,
+                onValueChange = { tournamentName = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text(tr("Название", "Name"))
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            OutlinedTextField(
+                value = playersText,
+                onValueChange = { playersText = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text(
+                        tr(
+                            "Игроки через запятую",
+                            "Players, comma separated"
+                        )
+                    )
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            OutlinedTextField(
+                value = targetText,
+                onValueChange = { targetText = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = {
+                    Text(
+                        tr(
+                            "Побед для титула",
+                            "Wins for title"
+                        )
+                    )
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                ),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            MainButton(
+                t = tr(
+                    "Создать турнир",
+                    "Create tournament"
+                ),
+                e = canCreate
+            ) {
+                val newTournament = Tournament(
+                    id = UUID.randomUUID().toString(),
+                    name = tournamentName.trim(),
+                    date = System.currentTimeMillis(),
+                    players = playerNames,
+                    targetWins = targetWins ?: 3,
+                    wins = List(playerNames.size) { 0 }
+                )
+
+                onTours(listOf(newTournament) + tours)
+
+                tournamentName = ""
+                playersText = ""
+                targetText = "3"
+            }
+        }
+    }
+}
+@Composable
+private fun HistoryPage(games: List<SavedGame>, onOpen: (SavedGame) -> Unit, onDelete: (SavedGame) -> Unit) {
   val en = LocalEnglish.current
   var tName by remember { mutableStateOf("") }
   var tPlayers by remember { mutableStateOf("") }
@@ -1868,7 +2185,10 @@ private fun HistoryPage(games: List<SavedGame>, onOpen: (SavedGame) -> Unit, onD
       tw != null &&
       tw in 1..20
   Page {
-    Heading(tr("История", "History"), tr("Партии и турниры", "Games and tournaments"))
+    Heading(
+    tr("История", "History"),
+    tr("Завершённые партии", "Completed games")
+)
     if (games.isEmpty()) {
       GlowPanel { Text(tr("Здесь появятся ваши игры", "Your games will appear here"), fontSize = 22.sp, fontWeight = FontWeight.Bold); Text(tr("Завершите первую партию.", "Finish your first game.")) }
     }
