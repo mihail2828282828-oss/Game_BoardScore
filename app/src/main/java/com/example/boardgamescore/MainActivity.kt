@@ -348,52 +348,20 @@ private fun ScoreApp(s: Storage) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var theme by remember {
-        mutableStateOf(s.theme)
-    }
+    var theme by remember { mutableStateOf(s.theme) }
+    var accent by remember { mutableStateOf(s.accent) }
+    var style by remember { mutableStateOf(s.style) }
+    var motion by remember { mutableStateOf(s.animations) }
+    var english by remember { mutableStateOf(s.english) }
+    var sound by remember { mutableStateOf(s.sound) }
 
-    var accent by remember {
-        mutableStateOf(s.accent)
-    }
+    var history by remember { mutableStateOf(s.loadHistory()) }
+    var tournaments by remember { mutableStateOf(s.loadTournaments()) }
+    var tab by remember { mutableStateOf(0) }
 
-    var style by remember {
-        mutableStateOf(s.style)
-    }
-
-    var motion by remember {
-        mutableStateOf(s.animations)
-    }
-
-    var english by remember {
-        mutableStateOf(s.english)
-    }
-
-    var sound by remember {
-        mutableStateOf(s.sound)
-    }
-
-    var history by remember {
-        mutableStateOf(s.loadHistory())
-    }
-
-    var tournaments by remember {
-        mutableStateOf(s.loadTournaments())
-    }
-
-    var tab by remember {
-        mutableStateOf(0)
-    }
-
-    /*
-     * Настройки новой партии
-     */
-    var draftTpl by remember {
-        mutableStateOf(0)
-    }
-
-    var draftName by remember {
-        mutableStateOf("")
-    }
+    // Настройки новой партии
+    var draftTpl by remember { mutableStateOf(0) }
+    var draftName by remember { mutableStateOf("") }
 
     val draftPlayers = remember {
         mutableStateListOf("", "")
@@ -407,84 +375,31 @@ private fun ScoreApp(s: Storage) {
         mutableStateListOf("🦊", "🐼")
     }
 
-    var draftRule by remember {
-        mutableStateOf(WinRule.MAX)
-    }
-
-    var draftTarget by remember {
-        mutableStateOf("0")
-    }
-
-    var draftTeamMode by remember {
-        mutableStateOf(false)
-    }
+    var draftRule by remember { mutableStateOf(WinRule.MAX) }
+    var draftTarget by remember { mutableStateOf("0") }
+    var draftTeamMode by remember { mutableStateOf(false) }
 
     val draftTeams = remember {
         mutableStateListOf(0, 0)
     }
 
-    var draftTeamA by remember {
-        mutableStateOf("Команда А")
-    }
+    var draftTeamA by remember { mutableStateOf("Команда А") }
+    var draftTeamB by remember { mutableStateOf("Команда Б") }
+    var draftNotes by remember { mutableStateOf("") }
 
-    var draftTeamB by remember {
-        mutableStateOf("Команда Б")
-    }
-
-    var draftNotes by remember {
-        mutableStateOf("")
-    }
-
-    /*
-     * Текущая партия
-     */
-    var active by remember {
-        mutableStateOf(false)
-    }
-
-    var finished by remember {
-        mutableStateOf(false)
-    }
-
-    var name by remember {
-        mutableStateOf("")
-    }
-
-    var players by remember {
-        mutableStateOf(emptyList<String>())
-    }
-
-    var emojis by remember {
-        mutableStateOf(emptyList<String>())
-    }
-
-    var starts by remember {
-        mutableStateOf(emptyList<Int>())
-    }
-
-    var rule by remember {
-        mutableStateOf(WinRule.MAX)
-    }
-
-    var target by remember {
-        mutableStateOf(0)
-    }
-
-    var notes by remember {
-        mutableStateOf("")
-    }
-
-    var teamMode by remember {
-        mutableStateOf(false)
-    }
-
-    var teamAssign by remember {
-        mutableStateOf(emptyList<Int>())
-    }
-
-    var teamNames by remember {
-        mutableStateOf(listOf("A", "B"))
-    }
+    // Текущая партия
+    var active by remember { mutableStateOf(false) }
+    var finished by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var players by remember { mutableStateOf(emptyList<String>()) }
+    var emojis by remember { mutableStateOf(emptyList<String>()) }
+    var starts by remember { mutableStateOf(emptyList<Int>()) }
+    var rule by remember { mutableStateOf(WinRule.MAX) }
+    var target by remember { mutableStateOf(0) }
+    var notes by remember { mutableStateOf("") }
+    var teamMode by remember { mutableStateOf(false) }
+    var teamAssign by remember { mutableStateOf(emptyList<Int>()) }
+    var teamNames by remember { mutableStateOf(listOf("A", "B")) }
 
     val rounds = remember {
         mutableStateListOf<SnapshotStateList<String>>()
@@ -494,39 +409,17 @@ private fun ScoreApp(s: Storage) {
         mutableStateListOf<List<List<String>>>()
     }
 
-    var turn by remember {
-        mutableStateOf(0)
-    }
+    var turn by remember { mutableStateOf(0) }
+    var big by remember { mutableStateOf(false) }
 
-    var big by remember {
-        mutableStateOf(false)
-    }
-
-    /*
-     * Диалоги и выбранные элементы
-     */
-    var confirm by remember {
-        mutableStateOf<String?>(null)
-    }
-
-    var deleteId by remember {
-        mutableStateOf<String?>(null)
-    }
-
-    var selected by remember {
-        mutableStateOf<SavedGame?>(null)
-    }
-
-    var help by remember {
-        mutableStateOf(false)
-    }
+    // Диалоги и выбранные элементы
+    var confirm by remember { mutableStateOf<String?>(null) }
+    var deleteId by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<SavedGame?>(null) }
+    var help by remember { mutableStateOf(false) }
 
     fun pushUndo() {
-        undoStack.add(
-            rounds.map { round ->
-                round.toList()
-            }
-        )
+        undoStack.add(rounds.map { it.toList() })
 
         if (undoStack.size > 40) {
             undoStack.removeAt(0)
@@ -534,14 +427,9 @@ private fun ScoreApp(s: Storage) {
     }
 
     fun restoreUndo() {
-        if (undoStack.isEmpty()) {
-            return
-        }
+        if (undoStack.isEmpty()) return
 
-        val previous = undoStack.removeAt(
-            undoStack.lastIndex
-        )
-
+        val previous = undoStack.removeAt(undoStack.lastIndex)
         rounds.clear()
 
         previous.forEach { round ->
@@ -556,13 +444,11 @@ private fun ScoreApp(s: Storage) {
     fun resetGame() {
         active = false
         finished = false
-
         name = ""
         players = emptyList()
         emojis = emptyList()
         starts = emptyList()
         notes = ""
-
         rule = WinRule.MAX
         target = 0
         teamMode = false
@@ -575,49 +461,27 @@ private fun ScoreApp(s: Storage) {
         turn = 0
         big = false
 
-        /*
-         * Сброс настроек новой партии
-         */
         draftTpl = 0
-
         draftName = ""
 
         draftPlayers.clear()
-        draftPlayers.addAll(
-            listOf("", "")
-        )
+        draftPlayers.addAll(listOf("", ""))
 
         draftStarts.clear()
-        draftStarts.addAll(
-            listOf("0", "0")
-        )
+        draftStarts.addAll(listOf("0", "0"))
 
         draftEmojis.clear()
-        draftEmojis.addAll(
-            listOf("🦊", "🐼")
-        )
+        draftEmojis.addAll(listOf("🦊", "🐼"))
 
         draftRule = WinRule.MAX
         draftTarget = "0"
         draftTeamMode = false
 
         draftTeams.clear()
-        draftTeams.addAll(
-            listOf(0, 0)
-        )
+        draftTeams.addAll(listOf(0, 0))
 
-        draftTeamA = if (english) {
-            "Team A"
-        } else {
-            "Команда А"
-        }
-
-        draftTeamB = if (english) {
-            "Team B"
-        } else {
-            "Команда Б"
-        }
-
+        draftTeamA = if (english) "Team A" else "Команда А"
+        draftTeamB = if (english) "Team B" else "Команда Б"
         draftNotes = ""
     }
 
@@ -625,32 +489,18 @@ private fun ScoreApp(s: Storage) {
         return if (draftTpl == 0) {
             draftName.trim()
         } else {
-            if (english) {
-                Templates[draftTpl].en
-            } else {
-                Templates[draftTpl].ru
-            }
+            if (english) Templates[draftTpl].en else Templates[draftTpl].ru
         }
     }
 
     fun doFinish() {
-        if (!active || finished) {
-            return
-        }
+        if (!active || finished) return
 
-        val scores = totals(
-            rounds = rounds,
-            starts = starts
-        )
-
-        if (scores.any { it == null }) {
-            return
-        }
+        val scores = totals(rounds, starts)
+        if (scores.any { it == null }) return
 
         val savedRounds = rounds.map { round ->
-            round.map {
-                parseScore(it)!!
-            }
+            round.map { parseScore(it)!! }
         }
 
         val game = SavedGame(
@@ -670,7 +520,6 @@ private fun ScoreApp(s: Storage) {
 
         history = listOf(game) + history
         s.saveHistory(history)
-
         finished = true
 
         if (sound) {
@@ -680,10 +529,6 @@ private fun ScoreApp(s: Storage) {
             }
         }
 
-        /*
-         * Обновление турниров.
-         * Для командных игр обновление турнира не выполняется.
-         */
         if (tournaments.isNotEmpty() && !teamMode) {
             val finalScores = scores.filterNotNull()
 
@@ -715,9 +560,7 @@ private fun ScoreApp(s: Storage) {
                         }
                     }
 
-                    tournament.copy(
-                        wins = updatedWins
-                    )
+                    tournament.copy(wins = updatedWins)
                 }
             }
 
@@ -727,13 +570,11 @@ private fun ScoreApp(s: Storage) {
 
     val useDark = when (theme) {
         "light" -> false
-        "dark" -> true
-        "amoled" -> true
+        "dark", "amoled" -> true
         else -> isSystemInDarkTheme()
     }
 
-    val useAmoled =
-        theme == "amoled" || style == 3
+    val useAmoled = theme == "amoled" || style == 3
 
     val darkAccents = listOf(
         Color(0xFFC6A8FF),
@@ -747,15 +588,15 @@ private fun ScoreApp(s: Storage) {
         Color(0xFF176B4C)
     )
 
+    val safeAccent = accent.coerceIn(0, 2)
+
     val primary by animateColorAsState(
         targetValue = if (useDark) {
-            darkAccents[accent.coerceIn(0, 2)]
+            darkAccents[safeAccent]
         } else {
-            lightAccents[accent.coerceIn(0, 2)]
+            lightAccents[safeAccent]
         },
-        animationSpec = tween(
-            durationMillis = if (motion) 350 else 0
-        ),
+        animationSpec = tween(if (motion) 350 else 0),
         label = "primary_color"
     )
 
@@ -764,16 +605,8 @@ private fun ScoreApp(s: Storage) {
             primary = primary,
             onPrimary = Color(0xFF171021),
             secondary = Color(0xFF7ADBCB),
-            background = if (useAmoled) {
-                Color.Black
-            } else {
-                Color(0xFF101019)
-            },
-            surface = if (useAmoled) {
-                Color(0xFF0D0D12)
-            } else {
-                Color(0xFF1B1B29)
-            },
+            background = if (useAmoled) Color.Black else Color(0xFF101019),
+            surface = if (useAmoled) Color(0xFF0D0D12) else Color(0xFF1B1B29),
             surfaceVariant = Color(0xFF292A3A),
             onBackground = Color(0xFFF5F1FF),
             onSurface = Color(0xFFF5F1FF)
@@ -792,40 +625,32 @@ private fun ScoreApp(s: Storage) {
     }
 
     val backgroundBrush = when (style) {
-        1 -> {
-            Brush.linearGradient(
-                listOf(
-                    primary.copy(alpha = 0.30f),
-                    scheme.background,
-                    Color(0xFFFF9E7A).copy(alpha = 0.18f)
-                )
+        1 -> Brush.linearGradient(
+            listOf(
+                primary.copy(alpha = 0.30f),
+                scheme.background,
+                Color(0xFFFF9E7A).copy(alpha = 0.18f)
             )
-        }
+        )
 
-        2 -> {
-            Brush.linearGradient(
-                listOf(
-                    Color(0xFF4ADE80).copy(alpha = 0.22f),
-                    scheme.background,
-                    primary.copy(alpha = 0.16f)
-                )
+        2 -> Brush.linearGradient(
+            listOf(
+                Color(0xFF4ADE80).copy(alpha = 0.22f),
+                scheme.background,
+                primary.copy(alpha = 0.16f)
             )
-        }
+        )
 
-        else -> {
-            Brush.linearGradient(
-                listOf(
-                    primary.copy(alpha = 0.22f),
-                    scheme.background,
-                    scheme.secondary.copy(alpha = 0.14f)
-                )
+        else -> Brush.linearGradient(
+            listOf(
+                primary.copy(alpha = 0.22f),
+                scheme.background,
+                scheme.secondary.copy(alpha = 0.14f)
             )
-        }
+        )
     }
 
-    BackHandler(
-        enabled = active || tab != 0
-    ) {
+    BackHandler(enabled = active || tab != 0) {
         if (tab != 0) {
             tab = 0
         } else {
@@ -837,24 +662,16 @@ private fun ScoreApp(s: Storage) {
         LocalEnglish provides english,
         LocalMotion provides motion
     ) {
-        MaterialTheme(
-            colorScheme = scheme
-        ) {
+        MaterialTheme(colorScheme = scheme) {
             Scaffold(
                 containerColor = scheme.background,
-
                 topBar = {
-                    Surface(
-                        color = scheme.background.copy(alpha = 0.95f)
-                    ) {
+                    Surface(color = scheme.background.copy(alpha = 0.95f)) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .statusBarsPadding()
-                                .padding(
-                                    horizontal = 20.dp,
-                                    vertical = 4.dp
-                                ),
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -866,22 +683,12 @@ private fun ScoreApp(s: Storage) {
                                 fontSize = 14.sp
                             )
 
-                            TextButton(
-                                onClick = {
-                                    help = true
-                                }
-                            ) {
-                                Text(
-                                    tr(
-                                        "?  Помощь",
-                                        "?  Help"
-                                    )
-                                )
+                            TextButton(onClick = { help = true }) {
+                                Text(tr("?  Помощь", "?  Help"))
                             }
                         }
                     }
                 },
-
                 bottomBar = {
                     NavigationBar(
                         containerColor = scheme.surface,
@@ -894,24 +701,14 @@ private fun ScoreApp(s: Storage) {
                             tr("Настройки", "Settings")
                         )
 
-                        val icons = listOf(
-                            "▶",
-                            "≡",
-                            "★",
-                            "⚙"
-                        )
+                        val icons = listOf("▶", "≡", "★", "⚙")
 
                         titles.forEachIndexed { index, title ->
                             NavigationBarItem(
                                 selected = tab == index,
-                                onClick = {
-                                    tab = index
-                                },
+                                onClick = { tab = index },
                                 icon = {
-                                    Text(
-                                        text = icons[index],
-                                        fontSize = 20.sp
-                                    )
+                                    Text(icons[index], fontSize = 20.sp)
                                 },
                                 label = {
                                     Text(title)
@@ -931,15 +728,8 @@ private fun ScoreApp(s: Storage) {
                     AnimatedContent(
                         targetState = tab,
                         transitionSpec = {
-                            fadeIn(
-                                tween(
-                                    if (motion) 220 else 0
-                                )
-                            ) togetherWith fadeOut(
-                                tween(
-                                    if (motion) 120 else 0
-                                )
-                            )
+                            fadeIn(tween(if (motion) 220 else 0)) togetherWith
+                                fadeOut(tween(if (motion) 120 else 0))
                         },
                         label = "tabs"
                     ) { currentTab ->
@@ -950,197 +740,127 @@ private fun ScoreApp(s: Storage) {
                                         tpl = draftTpl,
                                         onTpl = { templateIndex ->
                                             draftTpl = templateIndex
-                                            draftRule =
-                                                Templates[templateIndex].rule
+                                            draftRule = Templates[templateIndex].rule
                                             draftTarget =
                                                 Templates[templateIndex].target.toString()
 
-                                            /*
-                                             * Для шаблонов очищаем введённое
-                                             * пользовательское название.
-                                             */
                                             if (templateIndex != 0) {
                                                 draftName = ""
                                             }
                                         },
                                         name = draftName,
-                                        onName = {
-                                            draftName = it
-                                        },
+                                        onName = { draftName = it },
                                         names = draftPlayers,
                                         starts = draftStarts,
                                         emojis = draftEmojis,
                                         teams = draftTeams,
                                         rule = draftRule,
-                                        onRule = {
-                                            draftRule = it
-                                        },
+                                        onRule = { draftRule = it },
                                         target = draftTarget,
-                                        onTarget = {
-                                            draftTarget = it
-                                        },
+                                        onTarget = { draftTarget = it },
                                         teamMode = draftTeamMode,
-                                        onTeamMode = {
-                                            draftTeamMode = it
-                                        },
+                                        onTeamMode = { draftTeamMode = it },
                                         teamA = draftTeamA,
-                                        onTeamA = {
-                                            draftTeamA = it
-                                        },
+                                        onTeamA = { draftTeamA = it },
                                         teamB = draftTeamB,
-                                        onTeamB = {
-                                            draftTeamB = it
-                                        },
+                                        onTeamB = { draftTeamB = it },
                                         notes = draftNotes,
-                                        onNotes = {
-                                            draftNotes = it
-                                        },
+                                        onNotes = { draftNotes = it },
                                         onStart = {
                                             name = selectedGameName()
-
-                                            players = draftPlayers.map {
-                                                it.trim()
-                                            }
-
+                                            players = draftPlayers.map { it.trim() }
                                             starts = draftStarts.map {
                                                 it.trim()
                                                     .toIntOrNull()
-                                                    ?.coerceIn(
-                                                        -9999,
-                                                        9999
-                                                    )
+                                                    ?.coerceIn(-9999, 9999)
                                                     ?: 0
                                             }
-
                                             emojis = draftEmojis.toList()
-
                                             rule = draftRule
-
                                             target = draftTarget
                                                 .trim()
                                                 .toIntOrNull()
                                                 ?.coerceIn(0, 9999)
                                                 ?: 0
-
                                             notes = draftNotes.trim()
-
                                             teamMode = draftTeamMode
                                             teamAssign = draftTeams.toList()
 
                                             teamNames = listOf(
                                                 draftTeamA.trim().ifEmpty {
-                                                    if (english) {
-                                                        "Team A"
-                                                    } else {
-                                                        "Команда А"
-                                                    }
+                                                    if (english) "Team A" else "Команда А"
                                                 },
                                                 draftTeamB.trim().ifEmpty {
-                                                    if (english) {
-                                                        "Team B"
-                                                    } else {
-                                                        "Команда Б"
-                                                    }
+                                                    if (english) "Team B" else "Команда Б"
                                                 }
                                             )
 
                                             rounds.clear()
-                                            rounds.add(
-                                                newRound(players.size)
-                                            )
-
+                                            rounds.add(newRound(players.size))
                                             undoStack.clear()
+
                                             finished = false
                                             active = true
                                             turn = 0
                                             big = false
                                         }
                                     )
+                                } else if (big) {
+                                    BigScreen(
+                                        name = name,
+                                        players = players,
+                                        emojis = emojis,
+                                        sc = totals(rounds, starts),
+                                        finished = finished,
+                                        rule = rule,
+                                        teamMode = teamMode,
+                                        teamAssign = teamAssign,
+                                        teamNames = teamNames,
+                                        onNormal = { big = false },
+                                        onFinish = { confirm = "finish" },
+                                        onNew = { resetGame() }
+                                    )
                                 } else {
-                                    if (big) {
-                                        BigScreen(
-                                            name = name,
-                                            players = players,
-                                            emojis = emojis,
-                                            sc = totals(
-                                                rounds,
-                                                starts
-                                            ),
-                                            finished = finished,
-                                            rule = rule,
-                                            teamMode = teamMode,
-                                            teamAssign = teamAssign,
-                                            teamNames = teamNames,
-                                            onNormal = {
-                                                big = false
-                                            },
-                                            onFinish = {
-                                                confirm = "finish"
-                                            },
-                                            onNew = {
+                                    GamePage(
+                                        name = name,
+                                        players = players,
+                                        emojis = emojis,
+                                        starts = starts,
+                                        rule = rule,
+                                        target = target,
+                                        teamMode = teamMode,
+                                        teamAssign = teamAssign,
+                                        teamNames = teamNames,
+                                        rounds = rounds,
+                                        finished = finished,
+                                        turn = turn,
+                                        onTurn = { turn = it },
+                                        onBig = { big = true },
+                                        onAdd = {
+                                            pushUndo()
+                                            rounds.add(newRound(players.size))
+                                        },
+                                        onRemoveAsk = { confirm = "round" },
+                                        onUndo = { restoreUndo() },
+                                        canUndo = undoStack.isNotEmpty(),
+                                        pushUndo = { pushUndo() },
+                                        onFinishAsk = { confirm = "finish" },
+                                        onAutoFinish = { doFinish() },
+                                        onResetAsk = {
+                                            if (finished) {
                                                 resetGame()
+                                            } else {
+                                                confirm = "discard"
                                             }
-                                        )
-                                    } else {
-                                        GamePage(
-                                            name = name,
-                                            players = players,
-                                            emojis = emojis,
-                                            starts = starts,
-                                            rule = rule,
-                                            target = target,
-                                            teamMode = teamMode,
-                                            teamAssign = teamAssign,
-                                            teamNames = teamNames,
-                                            rounds = rounds,
-                                            finished = finished,
-                                            turn = turn,
-                                            onTurn = {
-                                                turn = it
-                                            },
-                                            onBig = {
-                                                big = true
-                                            },
-                                            onAdd = {
-                                                pushUndo()
-                                                rounds.add(
-                                                    newRound(players.size)
-                                                )
-                                            },
-                                            onRemoveAsk = {
-                                                confirm = "round"
-                                            },
-                                            onUndo = {
-                                                restoreUndo()
-                                            },
-                                            canUndo = undoStack.isNotEmpty(),
-                                            pushUndo = {
-                                                pushUndo()
-                                            },
-                                            onFinishAsk = {
-                                                confirm = "finish"
-                                            },
-                                            onAutoFinish = {
-                                                doFinish()
-                                            },
-                                            onResetAsk = {
-                                                if (finished) {
-                                                    resetGame()
-                                                } else {
-                                                    confirm = "discard"
-                                                }
-                                            }
-                                        )
-                                    }
+                                        }
+                                    )
                                 }
                             }
 
                             1 -> {
                                 HistoryPage(
                                     games = history,
-                                    onOpen = {
-                                        selected = it
-                                    },
+                                    onOpen = { selected = it },
                                     onDelete = {
                                         deleteId = it.id
                                         confirm = "delete"
@@ -1190,9 +910,7 @@ private fun ScoreApp(s: Storage) {
                                         s.sound = it
                                     },
                                     historyCount = history.size,
-                                    onClear = {
-                                        confirm = "clear"
-                                    },
+                                    onClear = { confirm = "clear" },
                                     tourCount = tournaments.size
                                 )
                             }
@@ -1200,8 +918,7 @@ private fun ScoreApp(s: Storage) {
                     }
                 }
             }
-        }
-    }
+
             if (help) {
                 HelpDialog {
                     help = false
@@ -1216,40 +933,30 @@ private fun ScoreApp(s: Storage) {
 
             confirm?.let { action ->
                 val title = when (action) {
-                    "round" -> {
-                        tr(
-                            "Удалить последний раунд?",
-                            "Delete the last round?"
-                        )
-                    }
+                    "round" -> tr(
+                        "Удалить последний раунд?",
+                        "Delete the last round?"
+                    )
 
-                    "clear" -> {
-                        tr(
-                            "Очистить историю?",
-                            "Clear history?"
-                        )
-                    }
+                    "clear" -> tr(
+                        "Очистить историю?",
+                        "Clear history?"
+                    )
 
-                    "delete" -> {
-                        tr(
-                            "Удалить запись?",
-                            "Delete entry?"
-                        )
-                    }
+                    "delete" -> tr(
+                        "Удалить запись?",
+                        "Delete entry?"
+                    )
 
-                    "discard" -> {
-                        tr(
-                            "Закрыть партию?",
-                            "Close game?"
-                        )
-                    }
+                    "discard" -> tr(
+                        "Закрыть партию?",
+                        "Close game?"
+                    )
 
-                    else -> {
-                        tr(
-                            "Завершить партию?",
-                            "Finish game?"
-                        )
-                    }
+                    else -> tr(
+                        "Завершить партию?",
+                        "Finish game?"
+                    )
                 }
 
                 val message =
@@ -1279,20 +986,13 @@ private fun ScoreApp(s: Storage) {
                         TextButton(
                             onClick = {
                                 when (action) {
-                                    "finish" -> {
-                                        doFinish()
-                                    }
-
-                                    "discard" -> {
-                                        resetGame()
-                                    }
+                                    "finish" -> doFinish()
+                                    "discard" -> resetGame()
 
                                     "round" -> {
                                         if (rounds.size > 1) {
                                             pushUndo()
-                                            rounds.removeAt(
-                                                rounds.lastIndex
-                                            )
+                                            rounds.removeAt(rounds.lastIndex)
                                         }
                                     }
 
@@ -1305,7 +1005,6 @@ private fun ScoreApp(s: Storage) {
                                         history = history.filterNot {
                                             it.id == deleteId
                                         }
-
                                         s.saveHistory(history)
                                     }
                                 }
@@ -1313,12 +1012,7 @@ private fun ScoreApp(s: Storage) {
                                 confirm = null
                             }
                         ) {
-                            Text(
-                                tr(
-                                    "Подтвердить",
-                                    "Confirm"
-                                )
-                            )
+                            Text(tr("Подтвердить", "Confirm"))
                         }
                     },
                     dismissButton = {
@@ -1327,12 +1021,7 @@ private fun ScoreApp(s: Storage) {
                                 confirm = null
                             }
                         ) {
-                            Text(
-                                tr(
-                                    "Отмена",
-                                    "Cancel"
-                                )
-                            )
+                            Text(tr("Отмена", "Cancel"))
                         }
                     }
                 )
