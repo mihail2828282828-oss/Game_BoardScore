@@ -2173,71 +2173,88 @@ private fun TournamentSection(
     }
 }
 @Composable
-private fun HistoryPage(games: List<SavedGame>, onOpen: (SavedGame) -> Unit, onDelete: (SavedGame) -> Unit) {
-  val en = LocalEnglish.current
-  var tName by remember { mutableStateOf("") }
-  var tPlayers by remember { mutableStateOf("") }
-  var tTarget by remember { mutableStateOf("3") }
-  val plist = tPlayers.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-  val tw = tTarget.toIntOrNull()
-  val okT = tName.trim().length in 1..40 &&
-      plist.size in 2..8 &&
-      tw != null &&
-      tw in 1..20
-  Page {
-    Heading(
-    tr("История", "History"),
-    tr("Завершённые партии", "Completed games")
-)
-    if (games.isEmpty()) {
-      GlowPanel { Text(tr("Здесь появятся ваши игры", "Your games will appear here"), fontSize = 22.sp, fontWeight = FontWeight.Bold); Text(tr("Завершите первую партию.", "Finish your first game.")) }
-    }
-    games.forEach { g ->
-      key(g.id) {
-        GlowPanel {
-          Text(dateText(g.date), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          Text(g.name, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-          Text(winnerText(g.players, savedTotals(g), g.rule, en), color = MaterialTheme.colorScheme.primary)
-          Text(tr("Игроков: ${g.players.size} · Раундов: ${g.rounds.size}", "Players: ${g.players.size} · Rounds: ${g.rounds.size}"))
-          if (g.notes.isNotEmpty()) Text("📝 ${g.notes}", fontSize = 13.sp)
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { onOpen(g) }) { Text(tr("Подробнее", "Details")) }
-            TextButton(onClick = { onDelete(g) }) { Text(tr("Удалить", "Delete"), color = MaterialTheme.colorScheme.error) }
-          }
-        }
-      }
-    }
-    GlowPanel(hi = true) {
-      Text(tr("Турнир до N побед", "Tournament to N wins"), fontWeight = FontWeight.Bold)
-      OutlinedTextField(tName, { tName = it }, Modifier.fillMaxWidth(), label = { Text(tr("Название турнира", "Tournament name")) }, singleLine = true, shape = RoundedCornerShape(14.dp))
-      OutlinedTextField(tPlayers, { tPlayers = it }, Modifier.fillMaxWidth(), label = { Text(tr("Игроки через запятую", "Players, comma separated")) }, singleLine = true, shape = RoundedCornerShape(14.dp))
-      OutlinedTextField(tTarget, { tTarget = it }, Modifier.fillMaxWidth(), label = { Text(tr("Побед для титула", "Wins for title")) }, singleLine = true, shape = RoundedCornerShape(14.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-      MainButton(tr("Создать турнир", "Create tournament"), okT) {
-        onTours(listOf(Tournament(UUID.randomUUID().toString(), tName.trim(), System.currentTimeMillis(), plist.take(8), tw ?: 3, List(plist.take(8).size) { 0 })) + tours)
-        tName = ""; tPlayers = ""
-      }
-      tours.forEach { t ->
-        key(t.id) {
-          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(t.name, fontWeight = FontWeight.Bold)
-            Text(tr("Цель: ${t.targetWins} победы", "Target: ${t.targetWins} wins"), fontSize = 12.sp)
-            t.players.forEachIndexed { i, p ->
-              Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("$p — ${t.wins.getOrElse(i) { 0 }}" + (if (t.wins.getOrElse(i) { 0 } >= t.targetWins) " 🏆" else ""))
-                Row {
-                  TextButton(onClick = { val nw = t.wins.toMutableList(); nw[i]++; onTours(tours.map { if (it.id == t.id) it.copy(wins = nw) else it }) }) { Text("+1") }
-                  TextButton(onClick = { val nw = t.wins.toMutableList(); if (nw[i] > 0) nw[i]--; onTours(tours.map { if (it.id == t.id) it.copy(wins = nw) else it }) }) { Text("-1") }
-                }
-              }
-            }
-            TextButton(onClick = { onTours(tours.filterNot { it.id == t.id }) }) { Text(tr("Удалить турнир", "Delete tournament"), color = MaterialTheme.colorScheme.error) }
-          }
-        }
-      }
-    }
-  }
-}
+private fun HistoryPage(
+    games: List<SavedGame>,
+    onOpen: (SavedGame) -> Unit,
+    onDelete: (SavedGame) -> Unit
+) {
+    val en = LocalEnglish.current
 
+    Page {
+        Heading(
+            tr("История", "History"),
+            tr("Завершённые партии", "Completed games")
+        )
+
+        if (games.isEmpty()) {
+            GlowPanel {
+                Text(
+                    tr("Здесь появятся ваши игры", "Your games will appear here"),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    tr("Завершите первую партию.", "Finish your first game.")
+                )
+            }
+        }
+
+        games.forEach { game ->
+            key(game.id) {
+                GlowPanel {
+                    Text(
+                        dateText(game.date),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        game.name,
+                        fontSize = 23.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        winnerText(
+                            game.players,
+                            savedTotals(game),
+                            game.rule,
+                            en
+                        ),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Text(
+                        tr(
+                            "Игроков: ${game.players.size} · Раундов: ${game.rounds.size}",
+                            "Players: ${game.players.size} · Rounds: ${game.rounds.size}"
+                        )
+                    )
+
+                    if (game.notes.isNotEmpty()) {
+                        Text("📝 ${game.notes}", fontSize = 13.sp)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = { onOpen(game) }) {
+                            Text(tr("Подробнее", "Details"))
+                        }
+
+                        TextButton(onClick = { onDelete(game) }) {
+                            Text(
+                                tr("Удалить", "Delete"),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun StatsPage(games: List<SavedGame>) {
   Page {
