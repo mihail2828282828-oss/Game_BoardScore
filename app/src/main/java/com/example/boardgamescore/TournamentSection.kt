@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Alignment
 import java.util.Locale
 import java.util.UUID
 
@@ -285,4 +286,263 @@ private fun TournamentDetails(
         tournament.wins.getOrElse(it) { 0 } >= tournament.targetWins
     }
 
-    val totalWins =
+    val totalWins = tournament.wins.sum()
+    val english = LocalEnglish.current
+
+    Page {
+        Heading(
+            title = tournament.name,
+            subtitle = tr(
+                "Цель: ${tournament.targetWins} побед · Матчей сыграно: $totalWins",
+                "Target: ${tournament.targetWins} wins · Matches played: $totalWins"
+            )
+        )
+
+        if (tournamentFinished) {
+            GlowPanel(highlighted = true) {
+                Text(
+                    text = "🏆 " + tr(
+                        "Турнир завершён",
+                        "Tournament finished"
+                    ),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = tr(
+                        "Чемпион: " + championIndexes.joinToString(", ") {
+                            tournament.players[it]
+                        },
+                        "Champion: " + championIndexes.joinToString(", ") {
+                            tournament.players[it]
+                        }
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        GlowPanel {
+            Text(
+                text = tr("Таблица побед", "Wins table"),
+                fontWeight = FontWeight.Bold
+            )
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                tournament.players.forEachIndexed { playerIndex, player ->
+                    val wins = tournament.wins
+                        .getOrElse(playerIndex) { 0 }
+                        .coerceAtLeast(0)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = if (wins >= tournament.targetWins) {
+                                    "$player 🏆"
+                                } else {
+                                    player
+                                },
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            Text(
+                                text = tr(
+                                    "Побед: $wins из ${tournament.targetWins}",
+                                    "Wins: $wins of ${tournament.targetWins}"
+                                ),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        TextButton(
+                            enabled = !tournamentFinished &&
+                                playerIndex in tournament.wins.indices,
+                            onClick = {
+                                if (tournament.wins.any {
+                                        it >= tournament.targetWins
+                                    }
+                                ) {
+                                    return@TextButton
+                                }
+
+                                changeWins(
+                                    tournaments = tournaments,
+                                    tournament = tournament,
+                                    onChange = onTournamentsChange,
+                                    playerIndex = playerIndex,
+                                    delta = 1
+                                )
+                            }
+                        ) {
+                            Text("+1")
+                        }
+
+                        TextButton(
+                            enabled = wins > 0,
+                            onClick = {
+                                changeWins(
+                                    tournaments = tournaments,
+                                    tournament = tournament,
+                                    onChange = onTournamentsChange,
+                                    playerIndex = playerIndex,
+                                    delta = -1
+                                )
+                            }
+                        ) {
+                            Text("−1")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!tournamentFinished) {
+            MainButton(
+                text = tr("Играть матч", "Play match"),
+                onClick = { onPlayMatch(tournament) }
+            )
+        }
+
+        if (matchTournamentId == tournament.id) {
+            Text(
+                text = tr(
+                    "Матч этого турнира настроен на вкладке «Игра». Завершите партию — победа зачтётся автоматически.",
+                    "A match for this tournament is prepared on the “Game” tab. Finish the game and the win is credited automatically."
+                ),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        GlowPanel {
+            Text(
+                text = tr("Как ведётся счёт", "How wins are counted"),
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = tr(
+                    "Автозачёт работает, когда этот турнир — единственный подходящий: " +
+                        "тот же состав игроков, один победитель, не командная партия. " +
+                        "При ничьей или нескольких подходящих турнирах используйте +1 вручную.",
+                    "Automatic credit works when this is the only matching tournament: " +
+                        "the same players, a single winner, not a team game. " +
+                        "For a draw or several matching tournaments, use +1 manually."
+                ),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = fairPlayNote(english),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        TextButton(
+            onClick = { pendingDelete = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = tr("Удалить турнир", "Delete tournament"),
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+
+        OutlinedButton(
+            onClick = onClose,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                tr(
+                    "← К списку турниров",
+                    "← Back to tournaments"
+                )
+            )
+        }
+    }
+
+    if (pendingDelete) {
+        AlertDialog(
+            onDismissRequest = { pendingDelete = false },
+            title = {
+                Text(
+                    tr("Удалить турнир?", "Delete tournament?")
+                )
+            },
+            text = {
+                Text(
+                    tr(
+                        "Турнир «${tournament.name}» и его счёт побед будут удалены. Это действие нельзя отменить.",
+                        "The tournament “${tournament.name}” and its win count will be removed. This action cannot be undone."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onTournamentsChange(
+                            tournaments.filterNot {
+                                it.id == tournament.id
+                            }
+                        )
+
+                        pendingDelete = false
+                        onClose()
+                    }
+                ) {
+                    Text(tr("Удалить", "Delete"))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { pendingDelete = false }
+                ) {
+                    Text(tr("Отмена", "Cancel"))
+                }
+            }
+        )
+    }
+}
+
+private fun changeWins(
+    tournaments: List<Tournament>,
+    tournament: Tournament,
+    onChange: (List<Tournament>) -> Unit,
+    playerIndex: Int,
+    delta: Int
+) {
+    onChange(
+        tournaments.map { current ->
+            if (current.id == tournament.id) {
+                current.copy(
+                    wins = current.wins.mapIndexed { index, value ->
+                        if (index == playerIndex) {
+                            (value + delta).coerceIn(
+                                0,
+                                current.targetWins
+                            )
+                        } else {
+                            value
+                        }
+                    }
+                )
+            } else {
+                current
+            }
+        }
+    )
+}
