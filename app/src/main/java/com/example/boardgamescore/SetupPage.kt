@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -30,67 +31,46 @@ import androidx.compose.ui.unit.sp
 internal fun SetupPage(
     templateIndex: Int,
     onTemplateChange: (Int) -> Unit,
-
     gameName: String,
     onGameNameChange: (String) -> Unit,
-
     playerNames: SnapshotStateList<String>,
     startingScores: SnapshotStateList<String>,
     playerEmojis: SnapshotStateList<String>,
     teamAssignments: SnapshotStateList<Int>,
-
     rule: WinRule,
     onRuleChange: (WinRule) -> Unit,
-
     target: String,
     onTargetChange: (String) -> Unit,
-
     teamMode: Boolean,
     onTeamModeChange: (Boolean) -> Unit,
-
     teamA: String,
     onTeamAChange: (String) -> Unit,
-
     teamB: String,
     onTeamBChange: (String) -> Unit,
-
     notes: String,
     onNotesChange: (String) -> Unit,
-
     tournaments: List<Tournament>,
     onTournamentsChange: (List<Tournament>) -> Unit,
-
     onStart: () -> Unit
 ) {
     val isFreeGame = templateIndex == 0
 
-    val cleanNames = playerNames.map {
-        it.trim()
-    }
+    val cleanNames = playerNames.map { it.trim() }
 
     val nameErrors = cleanNames.map { value ->
         when {
             value.isEmpty() -> {
-                tr(
-                    "Введите имя",
-                    "Enter a name"
-                )
+                tr("Введите имя", "Enter a name")
             }
 
             value.length > 15 -> {
-                tr(
-                    "Максимум 15 символов",
-                    "Maximum 15 characters"
-                )
+                tr("Максимум 15 символов", "Maximum 15 characters")
             }
 
             cleanNames.count {
                 it.equals(value, ignoreCase = true)
             } > 1 -> {
-                tr(
-                    "Имя уже используется",
-                    "Name already used"
-                )
+                tr("Имя уже используется", "Name already used")
             }
 
             else -> null
@@ -113,6 +93,11 @@ internal fun SetupPage(
         true
     }
 
+    val playerListsValid =
+        playerNames.size == startingScores.size &&
+            playerNames.size == playerEmojis.size &&
+            playerNames.size == teamAssignments.size
+
     val teamsValid = if (!teamMode) {
         true
     } else {
@@ -125,32 +110,21 @@ internal fun SetupPage(
             teamAssignments.contains(1) &&
             teamAValue.length in 1..30 &&
             teamBValue.length in 1..30 &&
-            !teamAValue.equals(
-                teamBValue,
-                ignoreCase = true
-            )
+            !teamAValue.equals(teamBValue, ignoreCase = true)
     }
 
-val playerListsValid =
-    playerNames.size == startingScores.size &&
-        playerNames.size == playerEmojis.size &&
-        playerNames.size == teamAssignments.size
-
     val canStart =
-    playerListsValid &&
-        playerNames.size in 2..8 &&
-        gameNameValid &&
-        nameErrors.all { it == null } &&
-        startingScoresValid &&
-        targetValid &&
-        teamsValid
+        playerListsValid &&
+            playerNames.size in 2..8 &&
+            gameNameValid &&
+            nameErrors.all { it == null } &&
+            startingScoresValid &&
+            targetValid &&
+            teamsValid
 
     Page {
         Heading(
-            title = tr(
-                "Время играть",
-                "Time to play"
-            ),
+            title = tr("Время играть", "Time to play"),
             subtitle = tr(
                 "Выберите шаблон и настройте участников.",
                 "Choose a template and configure the players."
@@ -164,10 +138,7 @@ val playerListsValid =
 
         GlowPanel(highlighted = true) {
             Text(
-                text = tr(
-                    "Шаблон игры",
-                    "Game template"
-                ),
+                text = tr("Шаблон игры", "Game template"),
                 fontWeight = FontWeight.Bold
             )
 
@@ -180,9 +151,7 @@ val playerListsValid =
                 Templates.forEachIndexed { index, template ->
                     FilterChip(
                         selected = templateIndex == index,
-                        onClick = {
-                            onTemplateChange(index)
-                        },
+                        onClick = { onTemplateChange(index) },
                         label = {
                             Text(
                                 text = if (LocalEnglish.current) {
@@ -200,10 +169,7 @@ val playerListsValid =
         if (isFreeGame) {
             GlowPanel {
                 Text(
-                    text = tr(
-                        "Название игры",
-                        "Game name"
-                    ),
+                    text = tr("Название игры", "Game name"),
                     fontWeight = FontWeight.Bold
                 )
 
@@ -212,12 +178,7 @@ val playerListsValid =
                     onValueChange = onGameNameChange,
                     modifier = Modifier.fillMaxWidth(),
                     label = {
-                        Text(
-                            tr(
-                                "Название",
-                                "Name"
-                            )
-                        )
+                        Text(tr("Название", "Name"))
                     },
                     placeholder = {
                         Text(
@@ -239,24 +200,17 @@ val playerListsValid =
                         "From 1 to 30 characters"
                     ),
                     fontSize = 12.sp,
-                    color = androidx.compose.material3.MaterialTheme
-                        .colorScheme
-                        .onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                if (
-                    gameName.isNotEmpty() &&
-                    gameName.trim().length > 30
-                ) {
+                if (gameName.isNotEmpty() && gameName.trim().length > 30) {
                     Text(
                         text = tr(
                             "Максимум 30 символов",
                             "Maximum 30 characters"
                         ),
                         fontSize = 12.sp,
-                        color = androidx.compose.material3.MaterialTheme
-                            .colorScheme
-                            .error
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -283,9 +237,7 @@ val playerListsValid =
                                 .coerceAtLeast(0)
 
                             playerEmojis[index] =
-                                Emojis[
-                                    (currentIndex + 1) % Emojis.size
-                                ]
+                                Emojis[(currentIndex + 1) % Emojis.size]
                         },
                         modifier = Modifier.size(48.dp),
                         contentPadding = PaddingValues(0.dp)
@@ -320,16 +272,11 @@ val playerListsValid =
                                 nameErrors[index] != null
                         )
 
-                        if (
-                            value.isNotEmpty() &&
-                            nameErrors[index] != null
-                        ) {
+                        if (value.isNotEmpty() && nameErrors[index] != null) {
                             Text(
                                 text = nameErrors[index]!!,
                                 fontSize = 12.sp,
-                                color = androidx.compose.material3.MaterialTheme
-                                    .colorScheme
-                                    .error
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
 
@@ -345,26 +292,18 @@ val playerListsValid =
                                 },
                                 modifier = Modifier.width(96.dp),
                                 label = {
-                                    Text(
-                                        tr(
-                                            "Старт",
-                                            "Start"
-                                        )
-                                    )
+                                    Text(tr("Старт", "Start"))
                                 },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Number
                                 ),
-                                isError =
-                                    startingScores[index]
-                                        .trim()
-                                        .toIntOrNull()
-                                        ?.let {
-                                            it !in -9999..9999
-                                        }
-                                        ?: true
+                                isError = startingScores[index]
+                                    .trim()
+                                    .toIntOrNull()
+                                    ?.let { it !in -9999..9999 }
+                                    ?: true
                             )
 
                             if (teamMode) {
@@ -376,21 +315,13 @@ val playerListsValid =
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text(
-                                        text = if (
-                                            teamAssignments[index] == 0
-                                        ) {
+                                        text = if (teamAssignments[index] == 0) {
                                             teamA.ifBlank {
-                                                tr(
-                                                    "Команда A",
-                                                    "Team A"
-                                                )
+                                                tr("Команда A", "Team A")
                                             }
                                         } else {
                                             teamB.ifBlank {
-                                                tr(
-                                                    "Команда B",
-                                                    "Team B"
-                                                )
+                                                tr("Команда B", "Team B")
                                             }
                                         },
                                         maxLines = 1
@@ -425,9 +356,7 @@ val playerListsValid =
                     playerNames.add("")
                     startingScores.add("0")
                     playerEmojis.add(
-                        Emojis[
-                            (playerNames.size - 1) % Emojis.size
-                        ]
+                        Emojis[(playerNames.size - 1) % Emojis.size]
                     )
                     teamAssignments.add(0)
                 },
@@ -435,10 +364,7 @@ val playerListsValid =
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    tr(
-                        "+ Добавить игрока",
-                        "+ Add player"
-                    )
+                    tr("+ Добавить игрока", "+ Add player")
                 )
             }
         }
@@ -454,22 +380,14 @@ val playerListsValid =
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = tr(
-                            "Командный режим",
-                            "Team mode"
-                        ),
+                        text = tr("Командный режим", "Team mode"),
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
-                        text = tr(
-                            "Счёт по командам",
-                            "Scores by teams"
-                        ),
+                        text = tr("Счёт по командам", "Scores by teams"),
                         fontSize = 12.sp,
-                        color = androidx.compose.material3.MaterialTheme
-                            .colorScheme
-                            .onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -485,12 +403,7 @@ val playerListsValid =
                     onValueChange = onTeamAChange,
                     modifier = Modifier.fillMaxWidth(),
                     label = {
-                        Text(
-                            tr(
-                                "Команда A",
-                                "Team A"
-                            )
-                        )
+                        Text(tr("Команда A", "Team A"))
                     },
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
@@ -502,12 +415,7 @@ val playerListsValid =
                     onValueChange = onTeamBChange,
                     modifier = Modifier.fillMaxWidth(),
                     label = {
-                        Text(
-                            tr(
-                                "Команда B",
-                                "Team B"
-                            )
-                        )
+                        Text(tr("Команда B", "Team B"))
                     },
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
@@ -521,41 +429,26 @@ val playerListsValid =
                             "Each team must have at least one player. Team names must be different."
                         ),
                         fontSize = 12.sp,
-                        color = androidx.compose.material3.MaterialTheme
-                            .colorScheme
-                            .error
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
 
             Text(
-                text = tr(
-                    "Победа",
-                    "Win rule"
-                ),
+                text = tr("Победа", "Win rule"),
                 fontWeight = FontWeight.Bold
             )
 
             Choice(
-                text = tr(
-                    "Больше очков",
-                    "Higher score wins"
-                ),
+                text = tr("Больше очков", "Higher score wins"),
                 selected = rule == WinRule.MAX,
-                onClick = {
-                    onRuleChange(WinRule.MAX)
-                }
+                onClick = { onRuleChange(WinRule.MAX) }
             )
 
             Choice(
-                text = tr(
-                    "Меньше очков",
-                    "Lower score wins"
-                ),
+                text = tr("Меньше очков", "Lower score wins"),
                 selected = rule == WinRule.MIN,
-                onClick = {
-                    onRuleChange(WinRule.MIN)
-                }
+                onClick = { onRuleChange(WinRule.MIN) }
             )
 
             OutlinedTextField(
@@ -563,12 +456,7 @@ val playerListsValid =
                 onValueChange = onTargetChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = {
-                    Text(
-                        tr(
-                            "Цель, необязательно",
-                            "Target, optional"
-                        )
-                    )
+                    Text(tr("Цель, необязательно", "Target, optional"))
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
@@ -579,29 +467,25 @@ val playerListsValid =
             )
 
             Text(
-    text = if (rule == WinRule.MAX) {
-        tr(
-            "Целевая сумма очков. Пустое значение или 0 — без цели. Завершение партии вручную.",
-            "Target score. Leave empty or enter 0 to disable. Finish the game manually."
-        )
-    } else {
-        tr(
-            "Лимит штрафных очков. Пустое значение или 0 — без лимита. Побеждает меньшая сумма.",
-            "Penalty limit. Leave empty or enter 0 to disable. The lowest total wins."
-        )
-    },
-    fontSize = 12.sp,
-    color = androidx.compose.material3.MaterialTheme
-        .colorScheme
-        .onSurfaceVariant
-)
+                text = if (rule == WinRule.MAX) {
+                    tr(
+                        "Целевая сумма очков. Пустое значение или 0 — без цели. Завершение партии вручную.",
+                        "Target score. Leave empty or enter 0 to disable. Finish the game manually."
+                    )
+                } else {
+                    tr(
+                        "Лимит штрафных очков. Пустое значение или 0 — без лимита. Побеждает меньшая сумма.",
+                        "Penalty limit. Leave empty or enter 0 to disable. The lowest total wins."
+                    )
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
 
         GlowPanel {
             Text(
-                text = tr(
-                    "Заметка",
-                    "Note"
-                ),
+                text = tr("Заметка", "Note"),
                 fontWeight = FontWeight.Bold
             )
 
@@ -610,22 +494,14 @@ val playerListsValid =
                 onValueChange = onNotesChange,
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
-                    Text(
-                        tr(
-                            "Где играли",
-                            "Where you played"
-                        )
-                    )
+                    Text(tr("Где играли", "Where you played"))
                 },
                 shape = RoundedCornerShape(16.dp)
             )
         }
 
         MainButton(
-            text = tr(
-                "Начать партию",
-                "Start game"
-            ),
+            text = tr("Начать партию", "Start game"),
             enabled = canStart,
             onClick = onStart
         )
