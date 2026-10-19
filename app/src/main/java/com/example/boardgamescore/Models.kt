@@ -9,7 +9,9 @@ data class Template(
     val ru: String,
     val en: String,
     val rule: WinRule,
-    val target: Int
+    val target: Int,
+    val descRu: String = "",
+    val descEn: String = ""
 )
 
 data class SavedGame(
