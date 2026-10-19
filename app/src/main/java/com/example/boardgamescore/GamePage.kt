@@ -1,18 +1,16 @@
 package com.example.boardgamescore
 
 import android.os.SystemClock
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.key
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
@@ -20,7 +18,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -28,7 +28,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,12 +75,12 @@ internal fun GamePage(
 
     val scores = totals(rounds, starts)
     val valid =
-    players.size in 2..8 &&
-        rounds.isNotEmpty() &&
-        starts.size == players.size &&
-        rounds.all { it.size == players.size } &&
-        scores.size == players.size &&
-        scores.all { it != null }
+        players.size in 2..8 &&
+            rounds.isNotEmpty() &&
+            starts.size == players.size &&
+            rounds.all { it.size == players.size } &&
+            scores.size == players.size &&
+            scores.all { it != null }
 
     val bestScore = if (!valid) {
         null
@@ -107,15 +109,15 @@ internal fun GamePage(
     }
 
     val resultsValid =
-    valid &&
-        (
-            !teamMode ||
-                (
-                    teamNames.size == 2 &&
-                        teamTotals.size == 2 &&
-                        teamTotals.all { it != null }
+        valid &&
+            (
+                !teamMode ||
+                    (
+                        teamNames.size == 2 &&
+                            teamTotals.size == 2 &&
+                            teamTotals.all { it != null }
+                    )
                 )
-        )
 
     var die by remember { mutableIntStateOf(0) }
     var coinHeads by remember { mutableStateOf<Boolean?>(null) }
@@ -123,43 +125,37 @@ internal fun GamePage(
     var timerLength by remember { mutableIntStateOf(0) }
     var secondsLeft by remember { mutableIntStateOf(0) }
     var timerRunning by remember { mutableStateOf(false) }
-
-	var timerDeadline by remember {
-    mutableLongStateOf(0L)
-}
-
-var timerRevision by remember {
-    mutableIntStateOf(0)
-}
+    var timerDeadline by remember { mutableLongStateOf(0L) }
+    var timerRevision by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(timerRunning, timerRevision, finished) {
-    if (finished) {
-        timerRunning = false
-        return@LaunchedEffect
-    }
-
-    if (!timerRunning) {
-        return@LaunchedEffect
-    }
-
-    while (true) {
-        val remainingMillis =
-            timerDeadline - SystemClock.elapsedRealtime()
-
-        if (remainingMillis <= 0L) {
-            secondsLeft = 0
+        if (finished) {
             timerRunning = false
-            vibrateNow(context)
-            break
+            return@LaunchedEffect
         }
 
-        secondsLeft = (
-            (remainingMillis + 999L) / 1000L
-        ).toInt()
+        if (!timerRunning) {
+            return@LaunchedEffect
+        }
 
-        delay(100)
+        while (true) {
+            val remainingMillis =
+                timerDeadline - SystemClock.elapsedRealtime()
+
+            if (remainingMillis <= 0L) {
+                secondsLeft = 0
+                timerRunning = false
+                vibrateNow(context)
+                break
+            }
+
+            secondsLeft = (
+                (remainingMillis + 999L) / 1000L
+            ).toInt()
+
+            delay(100)
+        }
     }
-}
 
     Page {
         Heading(
@@ -189,19 +185,17 @@ var timerRevision by remember {
                     )
                 }
             },
-            color = androidx.compose.material3.MaterialTheme
-                .colorScheme
-                .primary
+            color = MaterialTheme.colorScheme.primary
         )
 
         if (
-    !finished &&
-    valid &&
-    targetReached(
-        scores = if (teamMode) teamTotals else scores,
-        target = target
-    )
-) {
+            !finished &&
+            valid &&
+            targetReached(
+                scores = if (teamMode) teamTotals else scores,
+                target = target
+            )
+        ) {
             GlowPanel(highlighted = true) {
                 Text(
                     text = tr(
@@ -234,9 +228,7 @@ var timerRevision by remember {
             GlowPanel(highlighted = true) {
                 Text(
                     text = tr("ИТОГИ", "RESULTS"),
-                    color = androidx.compose.material3.MaterialTheme
-                        .colorScheme
-                        .primary,
+                    color = MaterialTheme.colorScheme.primary,
                     letterSpacing = 2.sp
                 )
 
@@ -329,19 +321,19 @@ var timerRevision by remember {
                 }
 
                 OutlinedButton(
-    			onClick = {
-        			coinHeads = Random.nextBoolean()
-    			},
-   			 enabled = !finished
-			) {
-    			val result = when (coinHeads) {
-       				true -> tr("Орёл", "Heads")
-        			false -> tr("Решка", "Tails")
-        			null -> "—"
-    			}
+                    onClick = {
+                        coinHeads = Random.nextBoolean()
+                    },
+                    enabled = !finished
+                ) {
+                    val result = when (coinHeads) {
+                        true -> tr("Орёл", "Heads")
+                        false -> tr("Решка", "Tails")
+                        null -> "—"
+                    }
 
-    			Text("🪙 $result")
-			}
+                    Text("🪙 $result")
+                }
 
                 OutlinedButton(
                     onClick = {
@@ -370,12 +362,12 @@ var timerRevision by remember {
                     FilterChip(
                         selected = timerLength == seconds,
                         onClick = {
-    timerRunning = false
-    timerLength = seconds
-    secondsLeft = seconds
-    timerDeadline = 0L
-    timerRevision++
-},
+                            timerRunning = false
+                            timerLength = seconds
+                            secondsLeft = seconds
+                            timerDeadline = 0L
+                            timerRevision++
+                        },
                         label = {
                             Text(
                                 if (seconds == 0) {
@@ -398,13 +390,9 @@ var timerRevision by remember {
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (secondsLeft == 0) {
-                        androidx.compose.material3.MaterialTheme
-                            .colorScheme
-                            .error
+                        MaterialTheme.colorScheme.error
                     } else {
-                        androidx.compose.material3.MaterialTheme
-                            .colorScheme
-                            .onSurface
+                        MaterialTheme.colorScheme.onSurface
                     }
                 )
 
@@ -414,9 +402,7 @@ var timerRevision by remember {
                             "⏰ Время вышло!",
                             "⏰ Time's up!"
                         ),
-                        color = androidx.compose.material3.MaterialTheme
-                            .colorScheme
-                            .error,
+                        color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -427,28 +413,23 @@ var timerRevision by remember {
                     ),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    androidx.compose.material3.Button(
-    onClick = {
-        if (secondsLeft <= 0) {
-            secondsLeft = timerLength
-        }
+                    Button(
+                        onClick = {
+                            if (secondsLeft <= 0) {
+                                secondsLeft = timerLength
+                            }
 
-        timerDeadline =
-            SystemClock.elapsedRealtime() +
-                secondsLeft * 1000L
+                            timerDeadline =
+                                SystemClock.elapsedRealtime() +
+                                    secondsLeft * 1000L
 
-        timerRevision++
-        timerRunning = true
-    },
-    enabled = !timerRunning && !finished
-) {
-    Text(
-        tr(
-            "Старт",
-            "Start"
-        )
-    )
-}
+                            timerRevision++
+                            timerRunning = true
+                        },
+                        enabled = !timerRunning && !finished
+                    ) {
+                        Text(tr("Старт", "Start"))
+                    }
 
                     OutlinedButton(
                         onClick = {
@@ -461,11 +442,11 @@ var timerRevision by remember {
 
                     OutlinedButton(
                         onClick = {
-    timerRunning = false
-    secondsLeft = timerLength
-    timerDeadline = 0L
-    timerRevision++
-}
+                            timerRunning = false
+                            secondsLeft = timerLength
+                            timerDeadline = 0L
+                            timerRevision++
+                        }
                     ) {
                         Text(tr("Сброс", "Reset"))
                     }
@@ -498,9 +479,7 @@ var timerRevision by remember {
                     if (playerIndex == safeTurn && !finished) {
                         Text(
                             text = tr("● ходит", "● to move"),
-                            color = androidx.compose.material3.MaterialTheme
-                                .colorScheme
-                                .primary,
+                            color = MaterialTheme.colorScheme.primary,
                             fontSize = 12.sp
                         )
                     }
@@ -532,9 +511,11 @@ var timerRevision by remember {
                                         ).coerceIn(-9999, 9999)
 
                                         if (updatedValue != currentValue) {
-    						pushUndo()
-    						currentRound[playerIndex] = updatedValue.toString()
-					},
+                                            pushUndo()
+                                            currentRound[playerIndex] =
+                                                updatedValue.toString()
+                                        }
+                                    },
                                     contentPadding = PaddingValues(0.dp),
                                     modifier = Modifier.size(48.dp)
                                 ) {
@@ -565,9 +546,7 @@ var timerRevision by remember {
                     "Исправьте очки, чтобы увидеть график.",
                     "Correct the scores to view the chart."
                 ),
-                color = androidx.compose.material3.MaterialTheme
-                    .colorScheme
-                    .error
+                color = MaterialTheme.colorScheme.error
             )
         }
 
@@ -598,9 +577,7 @@ var timerRevision by remember {
                         Text(
                             text = player,
                             modifier = Modifier.width(108.dp),
-                            color = androidx.compose.material3.MaterialTheme
-                                .colorScheme
-                                .primary,
+                            color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -627,16 +604,16 @@ var timerRevision by remember {
                                 ) {
                                     OutlinedTextField(
                                         value = currentValue,
-					onValueChange = { newValue ->
-    						if (
-        						!finished &&
-        						playerIndex in round.indices &&
-        						round[playerIndex] != newValue
-    						) {
-        						pushUndo()
-        						round[playerIndex] = newValue
-    						}
-					},
+                                        onValueChange = { newValue ->
+                                            if (
+                                                !finished &&
+                                                playerIndex in round.indices &&
+                                                round[playerIndex] != newValue
+                                            ) {
+                                                pushUndo()
+                                                round[playerIndex] = newValue
+                                            }
+                                        },
                                         modifier = Modifier.fillMaxWidth(),
                                         readOnly = finished,
                                         singleLine = true,
@@ -647,36 +624,36 @@ var timerRevision by remember {
                                         )
                                     )
 
-if (!finished) {
-    TextButton(
-        onClick = {
-            if (playerIndex in round.indices) {
-                val updated = when {
-                    currentValue.startsWith("-") ->
-                        																					currentValue.removePrefix("-")
+                                    if (!finished) {
+                                        TextButton(
+                                            onClick = {
+                                                if (playerIndex in round.indices) {
+                                                    val updated = when {
+                                                        currentValue.startsWith("-") ->
+                                                            currentValue.removePrefix("-")
 
-                    								currentValue.startsWith("+") ->
-                        								"-" + currentValue.removePrefix("+")
+                                                        currentValue.startsWith("+") ->
+                                                            "-" + currentValue.removePrefix("+")
 
-                   	 							else -> "-$currentValue"
-                							}
+                                                        else -> "-$currentValue"
+                                                    }
 
-                							if (updated != currentValue) {
-                    								pushUndo()
-                    								round[playerIndex] = updated
-                							}
-            							}
-        						},
-        						modifier = Modifier.heightIn(
-            							min = 48.dp
-        						)
-    						) {
-        						Text(
-            							text = "±",
-            							fontSize = 18.sp
-        						)
-    						}
-					}
+                                                    if (updated != currentValue) {
+                                                        pushUndo()
+                                                        round[playerIndex] = updated
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.heightIn(
+                                                min = 48.dp
+                                            )
+                                        ) {
+                                            Text(
+                                                text = "±",
+                                                fontSize = 18.sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -690,9 +667,7 @@ if (!finished) {
                         "Введите целые числа от −9999 до 9999 во всех ячейках.",
                         "Enter whole numbers from −9999 to 9999 in every cell."
                     ),
-                    color = androidx.compose.material3.MaterialTheme
-                        .colorScheme
-                        .error
+                    color = MaterialTheme.colorScheme.error
                 )
             }
         }
@@ -749,14 +724,14 @@ if (!finished) {
                 )
             }
 
-		MainButton(
-    		text = tr(
-        		"Завершить партию",
-        		"Finish game"
-    		),
-    		enabled = resultsValid,
-    		onClick = onFinishAsk
-		)
+            MainButton(
+                text = tr(
+                    "Завершить партию",
+                    "Finish game"
+                ),
+                enabled = resultsValid,
+                onClick = onFinishAsk
+            )
 
             TextButton(
                 onClick = onResetAsk,
