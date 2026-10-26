@@ -131,11 +131,6 @@ internal fun SetupPage(
             )
         )
 
-        TournamentSection(
-            tournaments = tournaments,
-            onTournamentsChange = onTournamentsChange
-        )
-
         GlowPanel(highlighted = true) {
             Text(
                 text = tr("Шаблон игры", "Game template"),
