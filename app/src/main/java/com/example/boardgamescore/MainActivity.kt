@@ -10,6 +10,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -25,23 +26,42 @@ class MainActivity : ComponentActivity() {
                 Storage(applicationContext)
             }
 
-            val darkMode = when (storage.theme) {
+            val systemDark = isSystemInDarkTheme()
+
+            val useAmoled =
+                storage.theme == "amoled" || storage.style == 3
+
+            val useDark = useAmoled || when (storage.theme) {
                 "light" -> false
-                "dark", "amoled" -> true
-                else -> isSystemInDarkTheme()
+                "dark" -> true
+                else -> systemDark
             }
 
-            val colors = if (darkMode) {
+            val accentIndex = storage.accent.coerceIn(0, 2)
+
+            val darkAccents = listOf(
+                Color(0xFFC6A8FF),
+                Color(0xFF8ECDFF),
+                Color(0xFF88E3BF)
+            )
+
+            val lightAccents = listOf(
+                Color(0xFF7040B0),
+                Color(0xFF175DA6),
+                Color(0xFF176B4C)
+            )
+
+            val colors = if (useDark) {
                 darkColorScheme(
-                    primary = Color(0xFFC6A8FF),
+                    primary = darkAccents[accentIndex],
                     secondary = Color(0xFF7ADBCB),
-                    background = if (storage.theme == "amoled") {
+                    background = if (useAmoled) {
                         Color.Black
                     } else {
                         Color(0xFF101019)
                     },
-                    surface = if (storage.theme == "amoled") {
-                        Color(0xFF08080B)
+                    surface = if (useAmoled) {
+                        Color(0xFF0B0B0F)
                     } else {
                         Color(0xFF1B1B29)
                     },
@@ -50,7 +70,7 @@ class MainActivity : ComponentActivity() {
                 )
             } else {
                 lightColorScheme(
-                    primary = Color(0xFF7040B0),
+                    primary = lightAccents[accentIndex],
                     secondary = Color(0xFF167D80),
                     background = Color(0xFFF5F3FC),
                     surface = Color.White,
@@ -73,14 +93,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AppRouter(storage: Storage) {
-    val splashState = rememberSaveable {
-        androidx.compose.runtime.mutableStateOf(true)
+    val showSplash = rememberSaveable {
+        mutableStateOf(true)
     }
 
-    if (splashState.value) {
+    if (showSplash.value) {
         SplashScreen(
             onFinished = {
-                splashState.value = false
+                showSplash.value = false
             }
         )
     } else {
