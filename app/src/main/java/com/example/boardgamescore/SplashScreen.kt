@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -122,22 +121,5 @@ private fun SplashContent() {
                 textAlign = TextAlign.Center
             )
         }
-    }
-}
-
-/**
- * Предпросмотр заставки для скриншота в отчёт.
- * В Preview переход к главному экрану не выполняется.
- */
-@Preview(
-    name = "Заставка SCORE CLUB",
-    showBackground = true,
-    widthDp = 360,
-    heightDp = 800
-)
-@Composable
-private fun SplashScreenPreview() {
-    MaterialTheme {
-        SplashContent()
     }
 }
