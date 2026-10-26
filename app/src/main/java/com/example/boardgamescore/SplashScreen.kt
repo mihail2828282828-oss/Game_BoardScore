@@ -20,21 +20,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
+/**
+ * Начальная заставка.
+ *
+ * Показывается 2,5 секунды, затем открывается основное приложение.
+ * Индикатор декоративный, он не отражает реальный прогресс загрузки.
+ */
 @Composable
-internal fun SplashScreen(
-    onFinished: () -> Unit
-) {
-    val currentOnFinished = rememberUpdatedState(onFinished)
-    val colors = MaterialTheme.colorScheme
+internal fun SplashScreen(onFinished: () -> Unit) {
+    val latestOnFinished = rememberUpdatedState(onFinished)
 
     LaunchedEffect(Unit) {
         delay(2500L)
-        currentOnFinished.value()
+        latestOnFinished.value.invoke()
     }
+
+    SplashContent()
+}
+
+/**
+ * Внешний вид заставки вынесен отдельно,
+ * чтобы его можно было открыть в Preview Android Studio.
+ */
+@Composable
+private fun SplashContent() {
+    val colors = MaterialTheme.colorScheme
 
     Box(
         modifier = Modifier
@@ -53,7 +68,6 @@ internal fun SplashScreen(
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -62,9 +76,7 @@ internal fun SplashScreen(
                 fontSize = 64.sp
             )
 
-            Spacer(
-                modifier = Modifier.height(20.dp)
-            )
+            Spacer(modifier = Modifier.height(20.dp))
 
             Text(
                 text = "SCORE CLUB",
@@ -75,9 +87,7 @@ internal fun SplashScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = "Настольные игры • Очки • Турниры",
@@ -86,18 +96,14 @@ internal fun SplashScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(
-                modifier = Modifier.height(36.dp)
-            )
+            Spacer(modifier = Modifier.height(36.dp))
 
             CircularProgressIndicator(
                 color = colors.primary,
                 strokeWidth = 3.dp
             )
 
-            Spacer(
-                modifier = Modifier.height(16.dp)
-            )
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "Подготовка игрового стола…",
@@ -106,9 +112,7 @@ internal fun SplashScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(
-                modifier = Modifier.height(40.dp)
-            )
+            Spacer(modifier = Modifier.height(40.dp))
 
             Text(
                 text = "Разработал Венедиктов М. Р.",
@@ -118,5 +122,22 @@ internal fun SplashScreen(
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+/**
+ * Предпросмотр заставки для скриншота в отчёт.
+ * В Preview переход к главному экрану не выполняется.
+ */
+@Preview(
+    name = "Заставка SCORE CLUB",
+    showBackground = true,
+    widthDp = 360,
+    heightDp = 800
+)
+@Composable
+private fun SplashScreenPreview() {
+    MaterialTheme {
+        SplashContent()
     }
 }
