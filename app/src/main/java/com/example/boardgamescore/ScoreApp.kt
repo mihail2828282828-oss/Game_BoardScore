@@ -705,17 +705,24 @@ internal fun ScoreApp(
                             1 -> {
                                 TournamentPage(
                                     tournaments = tournaments,
-                                    onTournamentsChange = { updated ->
+                                    onTournamentsChange = {
+                                        updated: List<Tournament> ->
+
                                         tournaments = updated
                                         storage.saveTournaments(updated)
                                     },
                                     selectedTournamentId =
                                         selectedTournamentId,
-                                    onSelectTournament = { id ->
+                                    onSelectTournament = {
+                                        id: String? ->
+
                                         selectedTournamentId = id
                                     },
-                                    matchTournamentId = matchTournamentId,
-                                    onPlayMatch = { tournament ->
+                                    matchTournamentId =
+                                        matchTournamentId,
+                                    onPlayMatch = {
+                                        tournament: Tournament ->
+
                                         playTournamentMatch(tournament)
                                     }
                                 )
