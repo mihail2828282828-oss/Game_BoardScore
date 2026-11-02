@@ -103,7 +103,7 @@ private fun TournamentList(
         )
 
         GlowPanel(highlighted = true) {
-            SectionTitle(tr("Новый турнир", "New tournament"))
+            TournamentTournamentSectionTitle(tr("Новый турнир", "New tournament"))
 
             OutlinedTextField(
                 value = name,
@@ -143,7 +143,7 @@ private fun TournamentList(
             )
 
             if (playerNames.isNotEmpty() && playerNames.size !in 2..8) {
-                Hint(
+                TournamentHint(
                     tr(
                         "Введите от 2 до 8 имён через запятую.",
                         "Enter 2–8 player names separated by commas."
@@ -153,7 +153,7 @@ private fun TournamentList(
             }
 
             if (!namesUnique) {
-                Hint(
+                TournamentHint(
                     tr(
                         "Имена игроков должны быть уникальными.",
                         "Player names must be unique."
@@ -184,7 +184,7 @@ private fun TournamentList(
                 }
             )
 
-            Hint(
+            TournamentHint(
                 tr(
                     "SCORE CLUB — счётчик очков для дружеских настольных игр. " +
                         "Ставки и азартные игры запрещены.",
@@ -196,9 +196,9 @@ private fun TournamentList(
 
         if (tournaments.isEmpty()) {
             GlowPanel {
-                SectionTitle(tr("Пока пусто", "Nothing yet"))
+                TournamentSectionTitle(tr("Пока пусто", "Nothing yet"))
 
-                Hint(
+                TournamentHint(
                     tr(
                         "Создайте первый турнир — его таблица откроется сразу.",
                         "Create your first tournament — its table opens right away."
@@ -230,7 +230,7 @@ private fun TournamentList(
                             }
                         }
 
-                        Hint(
+                        TournamentHint(
                             tr(
                                 "Цель: ${tournament.targetWins} побед · " +
                                     "Матчей: ${tpMatches(tournament)}",
@@ -302,7 +302,7 @@ private fun TournamentDetails(
 
         if (finished) {
             GlowPanel(highlighted = true) {
-                SectionTitle(
+                TournamentSectionTitle(
                     text = "🏆 " + tr("Турнир завершён", "Tournament finished"),
                     accent = true
                 )
@@ -319,7 +319,7 @@ private fun TournamentDetails(
         }
 
         GlowPanel {
-            SectionTitle(tr("Таблица побед", "Wins table"))
+            TournamentSectionTitle(tr("Таблица побед", "Wins table"))
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 tournament.players.forEachIndexed { playerIndex, player ->
@@ -345,7 +345,7 @@ private fun TournamentDetails(
                                 fontWeight = FontWeight.SemiBold
                             )
 
-                            Hint(
+                            TournamentHint(
                                 tr(
                                     "Побед: $wins из ${tournament.targetWins}",
                                     "Wins: $wins of ${tournament.targetWins}"
@@ -394,7 +394,7 @@ private fun TournamentDetails(
                 onClick = { onPlayMatch(tournament) }
             )
 
-            Hint(
+            TournamentHint(
                 tr(
                     "Откроется вкладка «Игра» с составом этого турнира. " +
                         "Вернуться сюда можно в любой момент.",
@@ -406,12 +406,12 @@ private fun TournamentDetails(
 
         if (matchTournamentId == tournament.id) {
             GlowPanel(highlighted = true) {
-                SectionTitle(
+                TournamentSectionTitle(
                     tr("Матч готов", "Match is ready"),
                     accent = true
                 )
 
-                Hint(
+                TournamentHint(
                     tr(
                         "Партия настроена на вкладке «Игра». Завершите её — " +
                             "победа попадёт в эту таблицу.",
