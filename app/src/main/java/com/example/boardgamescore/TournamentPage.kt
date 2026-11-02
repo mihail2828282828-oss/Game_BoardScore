@@ -103,7 +103,7 @@ private fun TournamentList(
         )
 
         GlowPanel(highlighted = true) {
-            TournamentTournamentSectionTitle(tr("Новый турнир", "New tournament"))
+            TournamentSectionTitle(tr("Новый турнир", "New tournament"))
 
             OutlinedTextField(
                 value = name,
