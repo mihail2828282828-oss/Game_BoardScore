@@ -11,7 +11,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -97,6 +96,11 @@ internal fun ScoreApp(
     var draftTeamB by remember { mutableStateOf("Команда Б") }
     var draftNotes by remember { mutableStateOf("") }
 
+    // Турнирный матч: какой турнир ждёт результат партии.
+    var matchTournamentId by remember {
+        mutableStateOf<String?>(null)
+    }
+
     // Текущая партия.
     var active by remember { mutableStateOf(false) }
     var finished by remember { mutableStateOf(false) }
@@ -127,6 +131,9 @@ internal fun ScoreApp(
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
     var selectedGame by remember { mutableStateOf<SavedGame?>(null) }
     var showHelp by remember { mutableStateOf(false) }
+    var selectedTournamentId by remember {
+        mutableStateOf<String?>(null)
+    }
 
     fun pushUndo() {
         undoStack.add(rounds.map { it.toList() })
@@ -193,6 +200,37 @@ internal fun ScoreApp(
         draftTeamB = if (english) "Team B" else "Команда Б"
     }
 
+    /** Запуск матча турнира: состав подставляется в черновик. */
+    fun playTournamentMatch(tournament: Tournament) {
+        val count = tournament.players.size
+
+        if (count !in 2..8) {
+            return
+        }
+
+        draftTemplate = 0
+        draftName = ""
+        draftRule = WinRule.MAX
+        draftTarget = "0"
+        draftTeamMode = false
+        draftNotes = ""
+
+        draftPlayers.clear()
+        draftPlayers.addAll(tournament.players)
+
+        draftStarts.clear()
+        draftStarts.addAll(List(count) { "0" })
+
+        draftEmojis.clear()
+        draftEmojis.addAll(List(count) { Emojis[it % Emojis.size] })
+
+        draftTeams.clear()
+        draftTeams.addAll(List(count) { 0 })
+
+        matchTournamentId = tournament.id
+        tab = 0
+    }
+
     fun finishGame() {
         if (!active || finished) return
 
@@ -240,6 +278,7 @@ internal fun ScoreApp(
             storage.saveTournaments(tournaments)
         }
 
+        matchTournamentId = null
         finished = true
         bigScreen = false
 
@@ -393,12 +432,13 @@ internal fun ScoreApp(
                     ) {
                         val titles = listOf(
                             tr("Игра", "Game"),
+                            tr("Турнир", "Tournament"),
                             tr("История", "History"),
                             tr("Статы", "Stats"),
                             tr("Настройки", "Settings")
                         )
 
-                        val icons = listOf("▶", "≡", "★", "⚙")
+                        val icons = listOf("▶", "🏆", "≡", "★", "⚙")
 
                         titles.forEachIndexed { index, title ->
                             NavigationBarItem(
@@ -455,7 +495,7 @@ internal fun ScoreApp(
                                                     draftRule = template.rule
                                                     draftTarget =
                                                         template.target
- .toString()
+                                                            .toString()
 
                                                     if (index != 0) {
                                                         draftName = ""
@@ -663,6 +703,25 @@ internal fun ScoreApp(
                             }
 
                             1 -> {
+                                TournamentPage(
+                                    tournaments = tournaments,
+                                    onTournamentsChange = { updated ->
+                                        tournaments = updated
+                                        storage.saveTournaments(updated)
+                                    },
+                                    selectedTournamentId =
+                                        selectedTournamentId,
+                                    onSelectTournament = { id ->
+                                        selectedTournamentId = id
+                                    },
+                                    matchTournamentId = matchTournamentId,
+                                    onPlayMatch = { tournament ->
+                                        playTournamentMatch(tournament)
+                                    }
+                                )
+                            }
+
+                            2 -> {
                                 HistoryPage(
                                     games = history,
                                     onOpen = {
@@ -675,7 +734,7 @@ internal fun ScoreApp(
                                 )
                             }
 
-                            2 -> {
+                            3 -> {
                                 StatsPage(games = history)
                             }
 
